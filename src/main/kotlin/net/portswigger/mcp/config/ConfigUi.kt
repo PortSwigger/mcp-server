@@ -24,7 +24,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         init {
             foreground = UIManager.getColor("Burp.warningBarBackground")
             isVisible = false
-            alignmentX = Component.LEFT_ALIGNMENT
+            alignmentX = LEFT_ALIGNMENT
         }
 
         override fun updateUI() {
@@ -36,7 +36,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val panel = JPanel(BorderLayout())
     val component: JComponent get() = panel
 
-    private val enabledCheckBox = JCheckBox("Enabled").apply { alignmentX = Component.LEFT_ALIGNMENT }
+    private val enabledCheckBox = JCheckBox("Enabled").apply { alignmentX = LEFT_ALIGNMENT }
     private val validationErrorLabel = WarningLabel()
 
     private val hostField = JTextField(15)
@@ -220,14 +220,27 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         }
 
         val configEditingToolingCheckBox = JCheckBox("Enable tools that can edit your config").apply {
-            alignmentX = Component.LEFT_ALIGNMENT
+            alignmentX = LEFT_ALIGNMENT
             isSelected = config.configEditingTooling
             addItemListener { event -> config.configEditingTooling = event.stateChange == ItemEvent.SELECTED }
+        }
+
+        val httpRequestApprovalCheckBox = JCheckBox("Require approval for HTTP requests").apply {
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = config.requireHttpRequestApproval
+            addItemListener { event -> config.requireHttpRequestApproval = event.stateChange == ItemEvent.SELECTED }
         }
 
         rightPanel.add(enabledCheckBox)
         rightPanel.add(createVerticalStrut(10))
         rightPanel.add(configEditingToolingCheckBox)
+        rightPanel.add(createVerticalStrut(10))
+        rightPanel.add(httpRequestApprovalCheckBox)
+        rightPanel.add(createVerticalStrut(10))
+        
+        val autoApprovePanel = createAutoApprovePanel()
+        rightPanel.add(autoApprovePanel)
+        
         rightPanel.add(validationErrorLabel)
         rightPanel.add(createVerticalStrut(15))
 
@@ -254,7 +267,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         val advancedWrapper = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
             isOpaque = false
             add(advancedPanel)
-            alignmentX = Component.LEFT_ALIGNMENT
+            alignmentX = LEFT_ALIGNMENT
         }
 
         rightPanel.add(advancedWrapper)
@@ -264,7 +277,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
         val installOptions = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
-            alignmentX = Component.LEFT_ALIGNMENT
+            alignmentX = LEFT_ALIGNMENT
             isOpaque = false
         }
 
@@ -353,5 +366,161 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         columnsPanel.add(rightPanel, c)
 
         panel.add(columnsPanel, BorderLayout.CENTER)
+    }
+
+    private fun createAutoApprovePanel(): JPanel {
+        val panel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            border = BorderFactory.createTitledBorder("Auto-approved HTTP targets")
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+
+        val listModel = DefaultListModel<String>()
+        val targetsList = JList(listModel).apply {
+            selectionMode = ListSelectionModel.SINGLE_SELECTION
+            visibleRowCount = 4
+        }
+
+        updateTargetsList(listModel)
+        
+        val refreshListener = {
+            SwingUtilities.invokeLater {
+                updateTargetsList(listModel)
+            }
+        }
+        config.addTargetsChangeListener(refreshListener)
+
+        val scrollPane = JScrollPane(targetsList).apply {
+            maximumSize = Dimension(400, 100)
+            preferredSize = Dimension(400, 100)
+        }
+
+        panel.add(scrollPane)
+        panel.add(createVerticalStrut(5))
+
+        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+
+        val addButton = JButton("Add").apply {
+            addActionListener {
+                val input = showInputDialog(
+                    panel,
+                    "Enter target (hostname or hostname:port):\nExamples: example.com, localhost:8080, *.api.com",
+                    "Add HTTP Target",
+                    PLAIN_MESSAGE
+                )
+                
+                if (!input.isNullOrBlank()) {
+                    val trimmed = input.trim()
+                    if (isValidTarget(trimmed)) {
+                        addTarget(trimmed)
+                    } else {
+                        showMessageDialog(
+                            panel,
+                            "Invalid target format. Use hostname or hostname:port",
+                            "Invalid Target",
+                            ERROR_MESSAGE
+                        )
+                    }
+                }
+            }
+        }
+
+        val removeButton = JButton("Remove").apply {
+            addActionListener {
+                val selectedIndex = targetsList.selectedIndex
+                if (selectedIndex >= 0) {
+                    removeTarget(selectedIndex, listModel)
+                }
+            }
+        }
+
+        val clearButton = JButton("Clear All").apply {
+            addActionListener {
+                val result = showConfirmDialog(
+                    panel,
+                    "Remove all auto-approved targets?",
+                    "Clear All Targets",
+                    YES_NO_OPTION
+                )
+                
+                if (result == YES_OPTION) {
+                    clearAllTargets()
+                }
+            }
+        }
+
+        buttonsPanel.add(addButton)
+        buttonsPanel.add(createHorizontalStrut(5))
+        buttonsPanel.add(removeButton)
+        buttonsPanel.add(createHorizontalStrut(5))
+        buttonsPanel.add(clearButton)
+
+        panel.add(buttonsPanel)
+        
+        return panel
+    }
+
+    private fun updateTargetsList(listModel: DefaultListModel<String>) {
+        listModel.clear()
+        config.getAutoApproveTargetsList().forEach { 
+            listModel.addElement(it) 
+        }
+    }
+
+    private fun isValidTarget(target: String): Boolean {
+        if (target.isBlank() || target.length > 255) return false
+        
+        if (target.startsWith("*.")) {
+            val domain = target.substring(2)
+            return domain.isNotEmpty() && 
+                   domain.length <= 253 && 
+                   isValidHostname(domain)
+        }
+        
+        val parts = target.split(":")
+        if (parts.size > 2) return false
+        
+        val hostname = parts[0]
+        if (!isValidHostname(hostname)) return false
+        
+        if (parts.size == 2) {
+            val port = parts[1].toIntOrNull()
+            if (port == null || port < 1 || port > 65535) return false
+        }
+        
+        return true
+    }
+    
+    private fun isValidHostname(hostname: String): Boolean {
+        if (hostname.isEmpty() || hostname.length > 253) return false
+        if (hostname.startsWith(".") || hostname.endsWith(".")) return false
+        if (hostname.contains("..")) return false
+        
+        return hostname.matches(Regex("^[a-zA-Z0-9.-]+$")) &&
+               hostname.split(".").all { label ->
+                   label.isNotEmpty() && 
+                   label.length <= 63 &&
+                   !label.startsWith("-") && 
+                   !label.endsWith("-")
+               }
+    }
+
+    private fun addTarget(target: String) {
+        config.addAutoApproveTarget(target)
+    }
+
+    private fun removeTarget(index: Int, listModel: DefaultListModel<String>) {
+        if (index >= 0 && index < listModel.size()) {
+            val target = listModel.getElementAt(index)
+            config.removeAutoApproveTarget(target)
+        }
+    }
+
+    private fun clearAllTargets() {
+        config.clearAutoApproveTargets()
     }
 }

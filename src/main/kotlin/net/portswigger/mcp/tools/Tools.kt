@@ -13,6 +13,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.toSerializableForm
+import net.portswigger.mcp.security.HttpRequestSecurity
+import kotlinx.coroutines.runBlocking
 import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
 import javax.swing.JTextArea
@@ -20,6 +22,16 @@ import javax.swing.JTextArea
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
+        val allowed = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config)
+        }
+        if (!allowed) {
+            api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
+            return@mcpTool "Send HTTP request denied by Burp Suite"
+        }
+
+        api.logging().logToOutput("MCP HTTP/1.1 request: $targetHostname:$targetPort")
+
         val fixedContent = content.replace("\r", "").replace("\n", "\r\n")
 
         val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
@@ -29,6 +41,16 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpTool<SendHttp2Request>("Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter.") {
+        val allowed = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config)
+        }
+        if (!allowed) {
+            api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
+            return@mcpTool "Send HTTP request denied by Burp Suite"
+        }
+
+        api.logging().logToOutput("MCP HTTP/2 request: $targetHostname:$targetPort")
+
         val orderedPseudoHeaderNames = listOf(":scheme", ":method", ":path", ":authority")
 
         val fixedPseudoHeaders = LinkedHashMap<String, String>().apply {
@@ -134,10 +156,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     mcpPaginatedTool<GetProxyHttpHistory>("Displays items within the proxy HTTP history") {
         api.proxy().history().asSequence()
             .map { 
-                // Limit the size of serialized data to prevent overflow
                 val serialized = Json.encodeToString(it.toSerializableForm())
                 if (serialized.length > 5000) {
-                    // Truncate long responses to prevent chat overflow
                     val truncated = serialized.substring(0, 5000) + "... (truncated)"
                     truncated
                 } else {
@@ -151,10 +171,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         api.proxy().history { it.contains(compiledRegex) }.asSequence()
             .map { 
-                // Limit the size of serialized data to prevent overflow
                 val serialized = Json.encodeToString(it.toSerializableForm())
                 if (serialized.length > 5000) {
-                    // Truncate long responses to prevent chat overflow
                     val truncated = serialized.substring(0, 5000) + "... (truncated)"
                     truncated
                 } else {
@@ -165,11 +183,9 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
         api.proxy().webSocketHistory().asSequence()
-            .map { 
-                // Limit the size of serialized data to prevent overflow
+            .map {
                 val serialized = Json.encodeToString(it.toSerializableForm())
                 if (serialized.length > 5000) {
-                    // Truncate long responses to prevent chat overflow
                     val truncated = serialized.substring(0, 5000) + "... (truncated)"
                     truncated
                 } else {
@@ -183,10 +199,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         api.proxy().webSocketHistory { it.contains(compiledRegex) }.asSequence()
             .map { 
-                // Limit the size of serialized data to prevent overflow
                 val serialized = Json.encodeToString(it.toSerializableForm())
                 if (serialized.length > 5000) {
-                    // Truncate long responses to prevent chat overflow
                     val truncated = serialized.substring(0, 5000) + "... (truncated)"
                     truncated
                 } else {

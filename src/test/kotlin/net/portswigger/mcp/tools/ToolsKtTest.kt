@@ -49,8 +49,11 @@ class ToolsKtTest {
 
     init {
         val persistedObject = mockk<PersistedObject>().apply {
-            every { getBoolean(any()) } returns true
-            every { getString(any()) } returns "127.0.0.1"
+            every { getBoolean("enabled") } returns true
+            every { getBoolean("configEditingTooling") } returns true
+            every { getBoolean("requireHttpRequestApproval") } returns false
+            every { getString("host") } returns "127.0.0.1"
+            every { getString("autoApproveTargets") } returns ""
             every { getInteger("port") } returns testPort
             every { setBoolean(any(), any()) } returns Unit
             every { setString(any(), any()) } returns Unit
