@@ -28,6 +28,8 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation("io.mockk:mockk:1.13.17")
     testImplementation("net.portswigger.burp.extensions:montoya-api:2025.2")
+    testImplementation("io.ktor:ktor-server-test-host:3.1.1")
+    testImplementation("io.ktor:ktor-client-content-negotiation:3.1.1")
 }
 
 tasks.test {

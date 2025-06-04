@@ -66,22 +66,29 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                         val origin = call.request.header("Origin")
                         val host = call.request.header("Host")
                         val referer = call.request.header("Referer")
+                        val userAgent = call.request.header("User-Agent")
                         
-                        if (origin != null && !isValidOrigin(origin)) {
-                            api.logging().logToOutput("Blocked DNS rebinding attack from origin: $origin")
-                            call.respond(HttpStatusCode.Forbidden, "Invalid origin")
+                        if (origin != null) {
+                            if (!isValidOrigin(origin)) {
+                                api.logging().logToOutput("Blocked DNS rebinding attack from origin: $origin")
+                                call.respond(HttpStatusCode.Forbidden)
+                                return@intercept
+                            }
+                        } else if (isBrowserRequest(userAgent)) {
+                            api.logging().logToOutput("Blocked browser request without Origin header")
+                            call.respond(HttpStatusCode.Forbidden)
                             return@intercept
                         }
                         
                         if (host != null && !isValidHost(host, config.port)) {
                             api.logging().logToOutput("Blocked DNS rebinding attack from host: $host")
-                            call.respond(HttpStatusCode.Forbidden, "Invalid host")
+                            call.respond(HttpStatusCode.Forbidden)
                             return@intercept
                         }
                         
                         if (referer != null && !isValidReferer(referer)) {
                             api.logging().logToOutput("Blocked suspicious request from referer: $referer")
-                            call.respond(HttpStatusCode.Forbidden, "Invalid referer")
+                            call.respond(HttpStatusCode.Forbidden)
                             return@intercept
                         }
                         
@@ -146,6 +153,18 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
         } catch (_: Exception) {
             return false
         }
+    }
+    
+    private fun isBrowserRequest(userAgent: String?): Boolean {
+        if (userAgent == null) return false
+        
+        val userAgentLower = userAgent.lowercase()
+        val browserIndicators = listOf(
+            "mozilla/", "chrome/", "safari/", "webkit/", "gecko/", 
+            "firefox/", "edge/", "opera/", "browser"
+        )
+        
+        return browserIndicators.any { userAgentLower.contains(it) }
     }
     
     private fun isValidHost(host: String, expectedPort: Int): Boolean {
