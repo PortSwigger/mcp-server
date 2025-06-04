@@ -11,7 +11,6 @@ import java.awt.*
 import java.awt.Component.CENTER_ALIGNMENT
 import java.awt.event.ItemEvent
 import javax.swing.*
-import javax.swing.BorderFactory.createEmptyBorder
 import javax.swing.Box.*
 import javax.swing.JOptionPane.*
 import javax.swing.event.DocumentEvent
@@ -216,7 +215,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             }
         }.apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            border = createEmptyBorder(15, 15, 15, 15)
+            border = BorderFactory.createEmptyBorder(25, 25, 25, 25)
         }
 
         val configEditingToolingCheckBox = JCheckBox("Enable tools that can edit your config").apply {
@@ -231,12 +230,26 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             addItemListener { event -> config.requireHttpRequestApproval = event.stateChange == ItemEvent.SELECTED }
         }
 
-        rightPanel.add(enabledCheckBox)
-        rightPanel.add(createVerticalStrut(10))
-        rightPanel.add(configEditingToolingCheckBox)
-        rightPanel.add(createVerticalStrut(10))
-        rightPanel.add(httpRequestApprovalCheckBox)
-        rightPanel.add(createVerticalStrut(10))
+        val mainOptionsPanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            border = BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(),
+                "Server Configuration"
+            )
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+        
+        mainOptionsPanel.add(createVerticalStrut(8))
+        mainOptionsPanel.add(enabledCheckBox)
+        mainOptionsPanel.add(createVerticalStrut(12))
+        mainOptionsPanel.add(configEditingToolingCheckBox)
+        mainOptionsPanel.add(createVerticalStrut(12))
+        mainOptionsPanel.add(httpRequestApprovalCheckBox)
+        mainOptionsPanel.add(createVerticalStrut(8))
+        
+        rightPanel.add(mainOptionsPanel)
+        rightPanel.add(createVerticalStrut(15))
         
         val autoApprovePanel = createAutoApprovePanel()
         rightPanel.add(autoApprovePanel)
@@ -245,24 +258,43 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         rightPanel.add(createVerticalStrut(15))
 
         val advancedPanel = JPanel(GridBagLayout()).apply {
-            border = BorderFactory.createTitledBorder("Advanced options")
+            border = BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(),
+                "Advanced Options"
+            )
             isOpaque = false
         }
 
         val gbc = GridBagConstraints().apply {
-            insets = Insets(5, 5, 5, 5)
+            insets = Insets(8, 10, 8, 10)
             anchor = GridBagConstraints.WEST
         }
 
+        gbc.gridy = 0
+        advancedPanel.add(createVerticalStrut(5), gbc)
+        
+        gbc.gridy = 1
+        gbc.gridx = 0
         advancedPanel.add(JLabel("Server host:"), gbc)
         gbc.gridx = 1
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        gbc.weightx = 1.0
         advancedPanel.add(hostField, gbc)
 
         gbc.gridx = 0
-        gbc.gridy = 1
+        gbc.gridy = 2
+        gbc.fill = GridBagConstraints.NONE
+        gbc.weightx = 0.0
         advancedPanel.add(JLabel("Server port:"), gbc)
         gbc.gridx = 1
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        gbc.weightx = 1.0
         advancedPanel.add(portField, gbc)
+        
+        gbc.gridy = 3
+        gbc.gridx = 0
+        gbc.gridwidth = 2
+        advancedPanel.add(createVerticalStrut(5), gbc)
 
         val advancedWrapper = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
             isOpaque = false
@@ -275,14 +307,25 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         rightPanel.add(reinstallNotice)
         rightPanel.add(createVerticalStrut(10))
 
-        val installOptions = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.X_AXIS)
+        val installationPanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            border = BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(),
+                "Installation"
+            )
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+        
+        val installOptions = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
             alignmentX = LEFT_ALIGNMENT
             isOpaque = false
         }
 
         providers.forEach { provider ->
-            val item = JButton(provider.installButtonText)
+            val item = JButton(provider.installButtonText).apply {
+                preferredSize = Dimension(200, 30)
+            }
             item.addActionListener {
                 if (!installationAvailable) {
                     showMessageDialog(
@@ -337,18 +380,26 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                 }
             }
             installOptions.add(item)
-            installOptions.add(createHorizontalStrut(10))
         }
 
-        installOptions.add(
+        installationPanel.add(createVerticalStrut(8))
+        installationPanel.add(installOptions)
+        installationPanel.add(createVerticalStrut(5))
+        
+        val manualInstallPanel = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
+            alignmentX = LEFT_ALIGNMENT
+            isOpaque = false
+        }
+        manualInstallPanel.add(
             Anchor(
                 text = "Manual install steps",
                 url = "https://github.com/PortSwigger/mcp-server?tab=readme-ov-file#manual-installations"
             )
         )
-        installOptions.maximumSize = installOptions.preferredSize
-
-        rightPanel.add(installOptions)
+        installationPanel.add(manualInstallPanel)
+        installationPanel.add(createVerticalStrut(8))
+        
+        rightPanel.add(installationPanel)
 
         val columnsPanel = JPanel(GridBagLayout())
         val c = GridBagConstraints().apply {
@@ -371,15 +422,33 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private fun createAutoApprovePanel(): JPanel {
         val panel = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            border = BorderFactory.createTitledBorder("Auto-approved HTTP targets")
+            border = BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(),
+                "Auto-approved HTTP Targets"
+            )
             isOpaque = false
             alignmentX = LEFT_ALIGNMENT
         }
 
+        val descLabel = JLabel("Specify domains and hosts that can be accessed without approval.").apply {
+            alignmentX = LEFT_ALIGNMENT
+            border = BorderFactory.createEmptyBorder(5, 5, 5, 5)
+            font = font.deriveFont(Font.PLAIN, 11f)
+        }
+        val examplesLabel = JLabel("Examples: example.com, localhost:8080, *.api.com").apply {
+            alignmentX = LEFT_ALIGNMENT
+            border = BorderFactory.createEmptyBorder(0, 5, 10, 5)
+            font = font.deriveFont(Font.ITALIC, 11f)
+        }
+        panel.add(descLabel)
+        panel.add(examplesLabel)
+        
         val listModel = DefaultListModel<String>()
         val targetsList = JList(listModel).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             visibleRowCount = 4
+            font = font.deriveFont(Font.PLAIN, 13f)
+            background = UIManager.getColor("TextField.background")
         }
 
         updateTargetsList(listModel)
@@ -394,17 +463,23 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         val scrollPane = JScrollPane(targetsList).apply {
             maximumSize = Dimension(400, 100)
             preferredSize = Dimension(400, 100)
+            border = BorderFactory.createCompoundBorder(
+                BorderFactory.createLoweredBevelBorder(),
+                BorderFactory.createEmptyBorder(2, 2, 2, 2)
+            )
         }
 
         panel.add(scrollPane)
-        panel.add(createVerticalStrut(5))
+        panel.add(createVerticalStrut(10))
 
-        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
             isOpaque = false
             alignmentX = LEFT_ALIGNMENT
+            border = BorderFactory.createEmptyBorder(0, 5, 5, 5)
         }
 
         val addButton = JButton("Add").apply {
+            preferredSize = Dimension(80, 26)
             addActionListener {
                 val input = showInputDialog(
                     panel,
@@ -430,6 +505,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         }
 
         val removeButton = JButton("Remove").apply {
+            preferredSize = Dimension(80, 26)
             addActionListener {
                 val selectedIndex = targetsList.selectedIndex
                 if (selectedIndex >= 0) {
@@ -439,6 +515,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         }
 
         val clearButton = JButton("Clear All").apply {
+            preferredSize = Dimension(80, 26)
             addActionListener {
                 val result = showConfirmDialog(
                     panel,
