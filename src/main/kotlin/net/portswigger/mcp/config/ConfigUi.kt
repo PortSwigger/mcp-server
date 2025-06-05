@@ -407,46 +407,48 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             private var rolloverIndex = -1
 
             init {
-            selectionMode = ListSelectionModel.SINGLE_SELECTION
-            visibleRowCount = 5
-            font = Design.Typography.bodyMedium
-            background = Design.Colors.listBackground
-            foreground = Design.Colors.onSurface
-            border = BorderFactory.createEmptyBorder(
-                Design.Spacing.SM, Design.Spacing.MD, Design.Spacing.SM, Design.Spacing.MD
-            )
-            cellRenderer = object : DefaultListCellRenderer() {
-                override fun getListCellRendererComponent(
-                    list: JList<*>, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean
-                ): Component {
-                    super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
-                    border = BorderFactory.createEmptyBorder(
-                        Design.Spacing.SM, Design.Spacing.MD, Design.Spacing.SM, Design.Spacing.MD
-                    )
+                selectionMode = ListSelectionModel.SINGLE_SELECTION
+                visibleRowCount = 5
+                font = Design.Typography.bodyMedium
+                background = Design.Colors.listBackground
+                foreground = Design.Colors.onSurface
+                border = BorderFactory.createEmptyBorder(
+                    Design.Spacing.SM, Design.Spacing.MD, Design.Spacing.SM, Design.Spacing.MD
+                )
+                cellRenderer = object : DefaultListCellRenderer() {
+                    override fun getListCellRendererComponent(
+                        list: JList<*>, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean
+                    ): Component {
+                        super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+                        border = BorderFactory.createEmptyBorder(
+                            Design.Spacing.SM, Design.Spacing.MD, Design.Spacing.SM, Design.Spacing.MD
+                        )
 
-                    val isRollover = index == rolloverIndex && !isSelected
+                        val isRollover = index == rolloverIndex && !isSelected
 
-                    if (isSelected) {
-                        background = Design.Colors.listSelectionBackground
-                        foreground = Design.Colors.listSelectionForeground
-                    } else if (isRollover) {
-                        background = Design.Colors.listHoverBackground
-                        foreground = Design.Colors.onSurface
-                    } else {
-                        background =
-                            if (index % 2 == 0) Design.Colors.listBackground else Design.Colors.listAlternatingBackground
-                        foreground = Design.Colors.onSurface
+                        if (isSelected) {
+                            background = Design.Colors.listSelectionBackground
+                            foreground = Design.Colors.listSelectionForeground
+                        } else if (isRollover) {
+                            background = Design.Colors.listHoverBackground
+                            foreground = Design.Colors.onSurface
+                        } else {
+                            background =
+                                if (index % 2 == 0) Design.Colors.listBackground else Design.Colors.listAlternatingBackground
+                            foreground = Design.Colors.onSurface
+                        }
+                        return this
                     }
-                    return this
                 }
-            }
 
                 addMouseMotionListener(object : java.awt.event.MouseMotionAdapter() {
                     override fun mouseMoved(e: java.awt.event.MouseEvent) {
                         try {
                             val index = locationToIndex(e.point)
-                            val newRolloverIndex = if (index >= 0 && index < model.size &&
-                                getCellBounds(index, index)?.contains(e.point) == true
+                            val newRolloverIndex = if (index >= 0 && index < model.size && getCellBounds(
+                                    index,
+                                    index
+                                )?.contains(e.point) == true
                             ) {
                                 cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                                 index
@@ -459,8 +461,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                                 rolloverIndex = newRolloverIndex
                                 repaint()
                             }
-                        } catch (ex: Exception) {
-                            // Reset state on error
+                        } catch (_: Exception) {
                             rolloverIndex = -1
                             cursor = Cursor.getDefaultCursor()
                         }
@@ -477,7 +478,6 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                     }
                 })
 
-                // Add keyboard support for accessibility
                 addKeyListener(object : java.awt.event.KeyAdapter() {
                     override fun keyPressed(e: java.awt.event.KeyEvent) {
                         when (e.keyCode) {
@@ -487,7 +487,6 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                                         removeTarget(selectedIndex, listModel)
                                         e.consume()
                                     } catch (ex: Exception) {
-                                        // Log error but don't crash the UI
                                         ex.printStackTrace()
                                     }
                                 }
@@ -563,7 +562,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                     } else {
                         Dialogs.showMessageDialog(
                             panel,
-                            "Invalid target format. Use hostname or hostname:port",
+                            "Invalid target format. Use hostname, hostname:port, or wildcard (*.domain)",
                             "Invalid Target",
                             ERROR_MESSAGE
                         )
@@ -616,9 +615,16 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private fun isValidTarget(target: String): Boolean {
         if (target.isBlank() || target.length > 255) return false
 
+        if (target.contains("..") || target.contains("//") || target.contains("@") || target.contains(" ") || target.contains(
+                "\t"
+            ) || target.contains("\n") || target.contains("\r")
+        ) return false
+
         if (target.startsWith("*.")) {
             val domain = target.substring(2)
-            return domain.isNotEmpty() && domain.length <= 253 && isValidHostname(domain)
+            if (domain.isEmpty() || domain.length > 253) return false
+
+            return isValidHostname(domain)
         }
 
         val parts = target.split(":")
@@ -637,11 +643,57 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
     private fun isValidHostname(hostname: String): Boolean {
         if (hostname.isEmpty() || hostname.length > 253) return false
+
+        if (isValidIPv4(hostname)) return true
+
+        if (isValidIPv6(hostname)) return true
+
         if (hostname.startsWith(".") || hostname.endsWith(".")) return false
         if (hostname.contains("..")) return false
 
         return hostname.matches(Regex("^[a-zA-Z0-9.-]+$")) && hostname.split(".").all { label ->
             label.isNotEmpty() && label.length <= 63 && !label.startsWith("-") && !label.endsWith("-")
+        }
+    }
+
+    private fun isValidIPv4(ip: String): Boolean {
+        val parts = ip.split(".")
+        if (parts.size != 4) return false
+
+        return parts.all { part ->
+            val num = part.toIntOrNull()
+            num != null && num in 0..255 && (num == 0 || !part.startsWith("0"))
+        }
+    }
+
+    private fun isValidIPv6(ip: String): Boolean {
+        val address = if (ip.startsWith("[") && ip.endsWith("]")) {
+            ip.substring(1, ip.length - 1)
+        } else {
+            ip
+        }
+
+        if (address.contains(":::")) return false
+
+        val parts = if (address.contains("::")) {
+            val splitParts = address.split("::")
+            if (splitParts.size > 2) return false
+
+            val leftParts = splitParts[0].split(":").filter { it.isNotEmpty() }
+            val rightParts = if (splitParts.size == 2) {
+                splitParts[1].split(":").filter { it.isNotEmpty() }
+            } else emptyList()
+
+            if (leftParts.size + rightParts.size > 8) return false
+            leftParts + rightParts
+        } else {
+            val normalParts = address.split(":")
+            if (normalParts.size != 8) return false
+            normalParts
+        }
+
+        return parts.all { part ->
+            part.length <= 4 && part.matches(Regex("^[0-9a-fA-F]+$"))
         }
     }
 

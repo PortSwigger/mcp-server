@@ -12,10 +12,7 @@ interface UserApprovalHandler {
 
 class SwingUserApprovalHandler : UserApprovalHandler {
     override suspend fun requestApproval(
-        hostname: String,
-        port: Int,
-        config: McpConfig,
-        requestContent: String?
+        hostname: String, port: Int, config: McpConfig, requestContent: String?
     ): Boolean {
         return suspendCoroutine { continuation ->
             SwingUtilities.invokeLater {
@@ -70,21 +67,42 @@ object HttpRequestSecurity {
         val targets = config.getAutoApproveTargetsList()
 
         return targets.any { approved ->
-            approved.equals(target, ignoreCase = true) || approved.equals(
-                hostOnly,
-                ignoreCase = true
-            ) || (approved.startsWith("*.") && hostname.endsWith(
-                approved.substring(2),
-                ignoreCase = true
-            ) && hostname != approved.substring(2))
+            when {
+                approved.equals(target, ignoreCase = true) -> true
+
+                approved.equals(hostOnly, ignoreCase = true) -> true
+
+                approved.startsWith("*.") -> {
+                    val domain = approved.substring(2)
+                    isValidWildcardMatch(hostname, domain)
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    private fun isValidWildcardMatch(hostname: String, domain: String): Boolean {
+        if (domain.isEmpty() || domain.contains("*")) return false
+
+        if (hostname.length <= domain.length) return false
+
+        val expectedSuffix = ".$domain"
+        if (!hostname.endsWith(expectedSuffix, ignoreCase = true)) return false
+
+        val subdomain = hostname.substring(0, hostname.length - expectedSuffix.length)
+
+        if (subdomain.isEmpty()) return false
+
+        return subdomain.split(".").all { label ->
+            label.isNotEmpty() && label.length <= 63 && !label.startsWith("-") && !label.endsWith("-") && label.matches(
+                Regex("^[a-zA-Z0-9-]+$")
+            )
         }
     }
 
     suspend fun checkHttpRequestPermission(
-        hostname: String,
-        port: Int,
-        config: McpConfig,
-        requestContent: String? = null
+        hostname: String, port: Int, config: McpConfig, requestContent: String? = null
     ): Boolean {
         if (!config.requireHttpRequestApproval) {
             return true
