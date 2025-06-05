@@ -11,6 +11,7 @@ import java.awt.*
 import java.awt.Component.CENTER_ALIGNMENT
 import java.awt.event.ItemEvent
 import javax.swing.*
+import javax.swing.DefaultListCellRenderer
 import javax.swing.Box.*
 import javax.swing.JOptionPane.*
 import javax.swing.event.DocumentEvent
@@ -18,6 +19,70 @@ import javax.swing.event.DocumentListener
 import kotlin.concurrent.thread
 
 class ConfigUi(private val config: McpConfig, private val providers: List<Provider>) {
+
+    object M3Colors {
+        val primary = Color(0xD86633)
+        val onPrimary = Color(0xFFFFFF)
+        val surface = Color(0xFFFBFF)
+        val onSurface = Color(0x1A1A1A)
+        val onSurfaceVariant = Color(0x666666)
+        val outline = Color(0xCCCCCC)
+        val outlineVariant = Color(0xE0E0E0)
+    }
+
+    object M3Typography {
+        val headlineMedium = Font("Inter", Font.BOLD, 28)
+        val titleMedium = Font("Inter", Font.BOLD, 16)
+        val bodyLarge = Font("Inter", Font.PLAIN, 16)
+        val bodyMedium = Font("Inter", Font.PLAIN, 14)
+        val labelLarge = Font("Inter", Font.BOLD, 14)
+        val labelMedium = Font("Inter", Font.BOLD, 12)
+    }
+
+    object M3Spacing {
+        const val SM = 8
+        const val MD = 16
+        const val LG = 24
+        const val XL = 32
+    }
+
+    private fun createM3Card(): JPanel {
+        return JPanel().apply {
+            background = M3Colors.surface
+            border = BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(M3Colors.outlineVariant, 1),
+                BorderFactory.createEmptyBorder(M3Spacing.MD, M3Spacing.MD, M3Spacing.MD, M3Spacing.MD)
+            )
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        }
+    }
+
+    private fun createM3FilledButton(text: String): JButton {
+        return JButton(text).apply {
+            background = M3Colors.primary
+            foreground = M3Colors.onPrimary
+            font = M3Typography.labelLarge
+            border = BorderFactory.createEmptyBorder(M3Spacing.SM, M3Spacing.MD, M3Spacing.SM, M3Spacing.MD)
+            isFocusPainted = false
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            preferredSize = Dimension(160, 40)
+        }
+    }
+
+    private fun createM3OutlinedButton(text: String): JButton {
+        return JButton(text).apply {
+            background = M3Colors.surface
+            foreground = M3Colors.primary
+            font = M3Typography.labelLarge
+            border = BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(M3Colors.outline, 1),
+                BorderFactory.createEmptyBorder(M3Spacing.SM, M3Spacing.MD, M3Spacing.SM, M3Spacing.MD)
+            )
+            isFocusPainted = false
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            preferredSize = Dimension(120, 40)
+        }
+    }
 
     class WarningLabel(content: String = "") : JLabel(content) {
         init {
@@ -35,7 +100,11 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val panel = JPanel(BorderLayout())
     val component: JComponent get() = panel
 
-    private val enabledCheckBox = JCheckBox("Enabled").apply { alignmentX = LEFT_ALIGNMENT }
+    private val enabledCheckBox = JCheckBox("Enabled").apply { 
+        alignmentX = LEFT_ALIGNMENT
+        font = M3Typography.bodyLarge
+        foreground = M3Colors.onSurface
+    }
     private val validationErrorLabel = WarningLabel()
 
     private val hostField = JTextField(15)
@@ -177,19 +246,18 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         val leftPanel = JPanel(GridBagLayout())
 
         val headerBox = createVerticalBox().apply {
-            add(object : JLabel("Burp MCP Server") {
-                init {
-                    font = font.deriveFont(Font.BOLD, 24f)
-                    alignmentX = CENTER_ALIGNMENT
-                }
-
-                override fun getForeground() = UIManager.getColor("Burp.burpTitle")
-            })
-            add(createVerticalStrut(25))
-            add(JLabel("Burp MCP Server exposes Burp tooling to AI clients.").apply {
+            add(JLabel("Burp MCP Server").apply {
+                font = M3Typography.headlineMedium
+                foreground = M3Colors.onSurface
                 alignmentX = CENTER_ALIGNMENT
             })
-            add(createVerticalStrut(15))
+            add(createVerticalStrut(M3Spacing.MD))
+            add(JLabel("Burp MCP Server exposes Burp tooling to AI clients.").apply {
+                font = M3Typography.bodyLarge
+                foreground = M3Colors.onSurfaceVariant
+                alignmentX = CENTER_ALIGNMENT
+            })
+            add(createVerticalStrut(M3Spacing.MD))
             add(
                 Anchor(
                     text = "Learn more about the Model Context Protocol",
@@ -200,56 +268,46 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
         leftPanel.add(headerBox)
 
-        val rightPanel = object : JPanel() {
-            init {
-                applyStyles()
-            }
-
-            override fun updateUI() {
-                super.updateUI()
-                applyStyles()
-            }
-
-            private fun applyStyles() {
-                background = UIManager.getColor("Burp.backgrounder")
-            }
-        }.apply {
+        val rightPanel = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            border = BorderFactory.createEmptyBorder(25, 25, 25, 25)
+            background = M3Colors.surface
+            border = BorderFactory.createEmptyBorder(M3Spacing.XL, M3Spacing.XL, M3Spacing.XL, M3Spacing.XL)
         }
 
         val configEditingToolingCheckBox = JCheckBox("Enable tools that can edit your config").apply {
             alignmentX = LEFT_ALIGNMENT
             isSelected = config.configEditingTooling
+            font = M3Typography.bodyLarge
+            foreground = M3Colors.onSurface
             addItemListener { event -> config.configEditingTooling = event.stateChange == ItemEvent.SELECTED }
         }
 
         val httpRequestApprovalCheckBox = JCheckBox("Require approval for HTTP requests").apply {
             alignmentX = LEFT_ALIGNMENT
             isSelected = config.requireHttpRequestApproval
+            font = M3Typography.bodyLarge
+            foreground = M3Colors.onSurface
             addItemListener { event -> config.requireHttpRequestApproval = event.stateChange == ItemEvent.SELECTED }
         }
 
-        val mainOptionsPanel = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            border = BorderFactory.createTitledBorder(
-                BorderFactory.createEtchedBorder(),
-                "Server Configuration"
-            )
-            isOpaque = false
+        val mainOptionsPanel = createM3Card().apply {
             alignmentX = LEFT_ALIGNMENT
         }
         
-        mainOptionsPanel.add(createVerticalStrut(8))
+        mainOptionsPanel.add(JLabel("Server Configuration").apply {
+            font = M3Typography.titleMedium
+            foreground = M3Colors.onSurface
+            alignmentX = LEFT_ALIGNMENT
+        })
+        mainOptionsPanel.add(createVerticalStrut(M3Spacing.MD))
         mainOptionsPanel.add(enabledCheckBox)
-        mainOptionsPanel.add(createVerticalStrut(12))
+        mainOptionsPanel.add(createVerticalStrut(M3Spacing.MD))
         mainOptionsPanel.add(configEditingToolingCheckBox)
-        mainOptionsPanel.add(createVerticalStrut(12))
+        mainOptionsPanel.add(createVerticalStrut(M3Spacing.MD))
         mainOptionsPanel.add(httpRequestApprovalCheckBox)
-        mainOptionsPanel.add(createVerticalStrut(8))
         
         rightPanel.add(mainOptionsPanel)
-        rightPanel.add(createVerticalStrut(15))
+        rightPanel.add(createVerticalStrut(M3Spacing.LG))
         
         val autoApprovePanel = createAutoApprovePanel()
         rightPanel.add(autoApprovePanel)
@@ -257,7 +315,18 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         rightPanel.add(validationErrorLabel)
         rightPanel.add(createVerticalStrut(15))
 
-        val advancedPanel = JPanel(GridBagLayout()).apply {
+        val advancedPanel = createM3Card().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        }
+        
+        advancedPanel.add(JLabel("Advanced Options").apply {
+            font = M3Typography.titleMedium
+            foreground = M3Colors.onSurface
+            alignmentX = LEFT_ALIGNMENT
+        })
+        advancedPanel.add(createVerticalStrut(M3Spacing.MD))
+
+        JPanel(GridBagLayout()).apply {
             border = BorderFactory.createTitledBorder(
                 BorderFactory.createEtchedBorder(),
                 "Advanced Options"
@@ -307,15 +376,17 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         rightPanel.add(reinstallNotice)
         rightPanel.add(createVerticalStrut(10))
 
-        val installationPanel = JPanel().apply {
+        val installationPanel = createM3Card().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            border = BorderFactory.createTitledBorder(
-                BorderFactory.createEtchedBorder(),
-                "Installation"
-            )
-            isOpaque = false
             alignmentX = LEFT_ALIGNMENT
         }
+        
+        installationPanel.add(JLabel("Installation").apply {
+            font = M3Typography.titleMedium
+            foreground = M3Colors.onSurface
+            alignmentX = LEFT_ALIGNMENT
+        })
+        installationPanel.add(createVerticalStrut(M3Spacing.MD))
         
         val installOptions = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
             alignmentX = LEFT_ALIGNMENT
@@ -323,8 +394,8 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         }
 
         providers.forEach { provider ->
-            val item = JButton(provider.installButtonText).apply {
-                preferredSize = Dimension(200, 30)
+            val item = createM3FilledButton(provider.installButtonText).apply {
+                preferredSize = Dimension(220, 40)
             }
             item.addActionListener {
                 if (!installationAvailable) {
@@ -420,25 +491,29 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     }
 
     private fun createAutoApprovePanel(): JPanel {
-        val panel = JPanel().apply {
+        val panel = createM3Card().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            border = BorderFactory.createTitledBorder(
-                BorderFactory.createEtchedBorder(),
-                "Auto-approved HTTP Targets"
-            )
-            isOpaque = false
             alignmentX = LEFT_ALIGNMENT
         }
 
+        panel.add(JLabel("Auto-Approved HTTP Targets").apply {
+            font = M3Typography.titleMedium
+            foreground = M3Colors.onSurface
+            alignmentX = LEFT_ALIGNMENT
+        })
+        panel.add(createVerticalStrut(M3Spacing.MD))
+        
         val descLabel = JLabel("Specify domains and hosts that can be accessed without approval.").apply {
             alignmentX = LEFT_ALIGNMENT
-            border = BorderFactory.createEmptyBorder(5, 5, 5, 5)
-            font = font.deriveFont(Font.PLAIN, 11f)
+            font = M3Typography.bodyMedium
+            foreground = M3Colors.onSurfaceVariant
+            border = BorderFactory.createEmptyBorder(0, 0, M3Spacing.SM, 0)
         }
         val examplesLabel = JLabel("Examples: example.com, localhost:8080, *.api.com").apply {
             alignmentX = LEFT_ALIGNMENT
-            border = BorderFactory.createEmptyBorder(0, 5, 10, 5)
-            font = font.deriveFont(Font.ITALIC, 11f)
+            font = M3Typography.labelMedium
+            foreground = M3Colors.onSurfaceVariant
+            border = BorderFactory.createEmptyBorder(0, 0, M3Spacing.MD, 0)
         }
         panel.add(descLabel)
         panel.add(examplesLabel)
@@ -446,9 +521,28 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         val listModel = DefaultListModel<String>()
         val targetsList = JList(listModel).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
-            visibleRowCount = 4
-            font = font.deriveFont(Font.PLAIN, 13f)
-            background = UIManager.getColor("TextField.background")
+            visibleRowCount = 5
+            font = M3Typography.bodyMedium
+            background = Color.WHITE
+            foreground = M3Colors.onSurface
+            border = BorderFactory.createEmptyBorder(M3Spacing.SM, M3Spacing.MD, M3Spacing.SM, M3Spacing.MD)
+            cellRenderer = object : DefaultListCellRenderer() {
+                override fun getListCellRendererComponent(
+                    list: JList<*>, value: Any?, index: Int,
+                    isSelected: Boolean, cellHasFocus: Boolean
+                ): Component {
+                    super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+                    border = BorderFactory.createEmptyBorder(M3Spacing.SM, M3Spacing.MD, M3Spacing.SM, M3Spacing.MD)
+                    if (isSelected) {
+                        background = Color(0xE3F2FD) // Light blue selection
+                        foreground = Color(0x1976D2) // Darker blue text
+                    } else {
+                        background = if (index % 2 == 0) Color.WHITE else Color(0xFAFAFA) // Alternating rows
+                        foreground = M3Colors.onSurface
+                    }
+                    return this
+                }
+            }
         }
 
         updateTargetsList(listModel)
@@ -461,25 +555,37 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         config.addTargetsChangeListener(refreshListener)
 
         val scrollPane = JScrollPane(targetsList).apply {
-            maximumSize = Dimension(400, 100)
-            preferredSize = Dimension(400, 100)
+            maximumSize = Dimension(500, 140)
+            preferredSize = Dimension(500, 140)
             border = BorderFactory.createCompoundBorder(
-                BorderFactory.createLoweredBevelBorder(),
-                BorderFactory.createEmptyBorder(2, 2, 2, 2)
+                BorderFactory.createLineBorder(Color(0xDDDDDD), 1),
+                BorderFactory.createEmptyBorder(1, 1, 1, 1)
             )
+            background = Color.WHITE
+            viewport.background = Color.WHITE
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
         }
 
-        panel.add(scrollPane)
-        panel.add(createVerticalStrut(10))
-
-        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
+        // Create a container for the table with better spacing
+        val tableContainer = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
             isOpaque = false
             alignmentX = LEFT_ALIGNMENT
-            border = BorderFactory.createEmptyBorder(0, 5, 5, 5)
+            border = BorderFactory.createEmptyBorder(0, 0, M3Spacing.MD, 0)
+        }
+        tableContainer.add(scrollPane)
+        
+        panel.add(tableContainer)
+
+        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, M3Spacing.MD, M3Spacing.SM)).apply {
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            border = BorderFactory.createEmptyBorder(M3Spacing.SM, 0, 0, 0)
         }
 
-        val addButton = JButton("Add").apply {
-            preferredSize = Dimension(80, 26)
+        val addButton = createM3FilledButton("Add").apply {
+            preferredSize = Dimension(100, 40)
             addActionListener {
                 val input = showInputDialog(
                     panel,
@@ -504,8 +610,8 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             }
         }
 
-        val removeButton = JButton("Remove").apply {
-            preferredSize = Dimension(80, 26)
+        val removeButton = createM3OutlinedButton("Remove").apply {
+            preferredSize = Dimension(100, 40)
             addActionListener {
                 val selectedIndex = targetsList.selectedIndex
                 if (selectedIndex >= 0) {
@@ -514,8 +620,8 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             }
         }
 
-        val clearButton = JButton("Clear All").apply {
-            preferredSize = Dimension(80, 26)
+        val clearButton = createM3OutlinedButton("Clear All").apply {
+            preferredSize = Dimension(100, 40)
             addActionListener {
                 val result = showConfirmDialog(
                     panel,
@@ -531,9 +637,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         }
 
         buttonsPanel.add(addButton)
-        buttonsPanel.add(createHorizontalStrut(5))
         buttonsPanel.add(removeButton)
-        buttonsPanel.add(createHorizontalStrut(5))
         buttonsPanel.add(clearButton)
 
         panel.add(buttonsPanel)
