@@ -4,9 +4,9 @@ import burp.api.montoya.persistence.PersistedObject
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 
 class McpConfigTest {
 
@@ -16,9 +16,9 @@ class McpConfigTest {
     @BeforeEach
     fun setup() {
         val storage = mutableMapOf<String, Any>()
-        
+
         persistedObject = mockk<PersistedObject>().apply {
-            every { getBoolean(any()) } answers { 
+            every { getBoolean(any()) } answers {
                 val key = firstArg<String>()
                 storage[key] as? Boolean ?: when (key) {
                     "enabled" -> true
@@ -28,13 +28,13 @@ class McpConfigTest {
             }
             every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
             every { getInteger(any()) } answers { storage[firstArg()] as? Int ?: 0 }
-            every { setBoolean(any(), any()) } answers { 
+            every { setBoolean(any(), any()) } answers {
                 storage[firstArg()] = secondArg<Boolean>()
             }
-            every { setString(any(), any()) } answers { 
+            every { setString(any(), any()) } answers {
                 storage[firstArg()] = secondArg<String>()
             }
-            every { setInteger(any(), any()) } answers { 
+            every { setInteger(any(), any()) } answers {
                 storage[firstArg()] = secondArg<Int>()
             }
         }
@@ -44,7 +44,7 @@ class McpConfigTest {
     @Test
     fun `addAutoApproveTarget should add new target`() {
         val result = config.addAutoApproveTarget("example.com")
-        
+
         assertTrue(result)
         assertEquals("example.com", config.autoApproveTargets)
         verify { persistedObject.setString("_autoApproveTargets", "example.com") }
@@ -54,7 +54,7 @@ class McpConfigTest {
     fun `addAutoApproveTarget should not add duplicate target`() {
         config.addAutoApproveTarget("example.com")
         val result = config.addAutoApproveTarget("example.com")
-        
+
         assertFalse(result)
         assertEquals("example.com", config.autoApproveTargets)
     }
@@ -62,7 +62,7 @@ class McpConfigTest {
     @Test
     fun `addAutoApproveTarget should trim whitespace`() {
         val result = config.addAutoApproveTarget("  example.com  ")
-        
+
         assertTrue(result)
         assertEquals("example.com", config.autoApproveTargets)
     }
@@ -70,7 +70,7 @@ class McpConfigTest {
     @Test
     fun `addAutoApproveTarget should not add empty target`() {
         val result = config.addAutoApproveTarget("   ")
-        
+
         assertFalse(result)
         assertEquals("", config.autoApproveTargets)
     }
@@ -79,7 +79,7 @@ class McpConfigTest {
     fun `addAutoApproveTarget should handle multiple targets`() {
         config.addAutoApproveTarget("example.com")
         config.addAutoApproveTarget("test.org")
-        
+
         assertEquals("example.com,test.org", config.autoApproveTargets)
         assertEquals(listOf("example.com", "test.org"), config.getAutoApproveTargetsList())
     }
@@ -88,9 +88,9 @@ class McpConfigTest {
     fun `removeAutoApproveTarget should remove existing target`() {
         config.addAutoApproveTarget("example.com")
         config.addAutoApproveTarget("test.org")
-        
+
         val result = config.removeAutoApproveTarget("example.com")
-        
+
         assertTrue(result)
         assertEquals("test.org", config.autoApproveTargets)
         assertEquals(listOf("test.org"), config.getAutoApproveTargetsList())
@@ -99,9 +99,9 @@ class McpConfigTest {
     @Test
     fun `removeAutoApproveTarget should return false for non-existing target`() {
         config.addAutoApproveTarget("example.com")
-        
+
         val result = config.removeAutoApproveTarget("notfound.com")
-        
+
         assertFalse(result)
         assertEquals("example.com", config.autoApproveTargets)
     }
@@ -110,9 +110,9 @@ class McpConfigTest {
     fun `clearAutoApproveTargets should remove all targets`() {
         config.addAutoApproveTarget("example.com")
         config.addAutoApproveTarget("test.org")
-        
+
         config.clearAutoApproveTargets()
-        
+
         assertEquals("", config.autoApproveTargets)
         assertEquals(emptyList<String>(), config.getAutoApproveTargetsList())
     }
@@ -129,21 +129,20 @@ class McpConfigTest {
             every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
             every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
             every { getInteger(any()) } answers { storage[firstArg()] as? Int ?: 0 }
-            every { setBoolean(any(), any()) } answers { 
+            every { setBoolean(any(), any()) } answers {
                 storage[firstArg()] = secondArg<Boolean>()
             }
-            every { setString(any(), any()) } answers { 
+            every { setString(any(), any()) } answers {
                 storage[firstArg()] = secondArg<String>()
             }
-            every { setInteger(any(), any()) } answers { 
+            every { setInteger(any(), any()) } answers {
                 storage[firstArg()] = secondArg<Int>()
             }
         }
         config = McpConfig(persistedObject)
-        
+
         assertEquals(
-            listOf("example.com", "test.org", "*.api.com"), 
-            config.getAutoApproveTargetsList()
+            listOf("example.com", "test.org", "*.api.com"), config.getAutoApproveTargetsList()
         )
     }
 
@@ -154,35 +153,34 @@ class McpConfigTest {
             every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
             every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
             every { getInteger(any()) } answers { storage[firstArg()] as? Int ?: 0 }
-            every { setBoolean(any(), any()) } answers { 
+            every { setBoolean(any(), any()) } answers {
                 storage[firstArg()] = secondArg<Boolean>()
             }
-            every { setString(any(), any()) } answers { 
+            every { setString(any(), any()) } answers {
                 storage[firstArg()] = secondArg<String>()
             }
-            every { setInteger(any(), any()) } answers { 
+            every { setInteger(any(), any()) } answers {
                 storage[firstArg()] = secondArg<Int>()
             }
         }
         config = McpConfig(persistedObject)
-        
+
         assertEquals(
-            listOf("example.com", "test.org"), 
-            config.getAutoApproveTargetsList()
+            listOf("example.com", "test.org"), config.getAutoApproveTargetsList()
         )
     }
 
     @Test
     fun `targets change listener should be notified`() {
         var notificationCount = 0
-        val listener = { 
+        val listener = {
             notificationCount++
             Unit
         }
-        
+
         config.addTargetsChangeListener(listener)
         config.addAutoApproveTarget("example.com")
-        
+
         assertEquals(1, notificationCount)
     }
 
@@ -190,48 +188,31 @@ class McpConfigTest {
     fun `targets change listener should handle exceptions`() {
         val badListener = { throw RuntimeException("Test exception") }
         val goodListener = { /* do nothing */ }
-        
+
         config.addTargetsChangeListener(badListener)
         config.addTargetsChangeListener(goodListener)
-        
+
         assertDoesNotThrow {
             config.addAutoApproveTarget("example.com")
         }
     }
 
     @Test
-    fun `removeTargetsChangeListener should remove listener`() {
-        var notificationCount = 0
-        val listener = { 
-            notificationCount++
-            Unit
-        }
-        
-        config.addTargetsChangeListener(listener)
-        config.addAutoApproveTarget("example.com")
-        assertEquals(1, notificationCount)
-        
-        config.removeTargetsChangeListener(listener)
-        config.addAutoApproveTarget("test.org")
-        assertEquals(1, notificationCount) // Should not increase
-    }
-
-    @Test
     fun `autoApproveTargets setter should only notify on actual changes`() {
         var notificationCount = 0
-        val listener = { 
+        val listener = {
             notificationCount++
             Unit
         }
-        
+
         config.addTargetsChangeListener(listener)
-        
+
         config.autoApproveTargets = "example.com"
         assertEquals(1, notificationCount)
-        
+
         config.autoApproveTargets = "example.com"
         assertEquals(1, notificationCount)
-        
+
         config.autoApproveTargets = "test.org"
         assertEquals(2, notificationCount)
     }
@@ -239,11 +220,11 @@ class McpConfigTest {
     @Test
     fun `configEditingTooling should persist correctly`() {
         assertFalse(config.configEditingTooling)
-        
+
         config.configEditingTooling = true
         assertTrue(config.configEditingTooling)
         verify { persistedObject.setBoolean("configEditingTooling", true) }
-        
+
         config.configEditingTooling = false
         assertFalse(config.configEditingTooling)
         verify { persistedObject.setBoolean("configEditingTooling", false) }
@@ -252,11 +233,11 @@ class McpConfigTest {
     @Test
     fun `requireHttpRequestApproval should persist correctly`() {
         assertTrue(config.requireHttpRequestApproval)
-        
+
         config.requireHttpRequestApproval = false
         assertFalse(config.requireHttpRequestApproval)
         verify { persistedObject.setBoolean("requireHttpRequestApproval", false) }
-        
+
         config.requireHttpRequestApproval = true
         assertTrue(config.requireHttpRequestApproval)
         verify { persistedObject.setBoolean("requireHttpRequestApproval", true) }

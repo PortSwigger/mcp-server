@@ -46,6 +46,9 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val portField = JTextField(5)
     private val reinstallNotice = WarningLabel("Make sure to reinstall after changing server settings")
 
+    private lateinit var alwaysAllowHttpHistoryCheckBox: JCheckBox
+    private lateinit var alwaysAllowWebSocketHistoryCheckBox: JCheckBox
+
     private var toggleListener: ((Boolean) -> Unit)? = null
     private var suppressToggleEvents: Boolean = false
 
@@ -224,6 +227,48 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             }
         }
 
+        val historyAccessApprovalCheckBox = JCheckBox("Require approval for history access").apply {
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = config.requireHistoryAccessApproval
+            font = Design.Typography.bodyLarge
+            foreground = Design.Colors.onSurface
+            addItemListener { event ->
+                config.requireHistoryAccessApproval = event.stateChange == ItemEvent.SELECTED
+                if (event.stateChange != ItemEvent.SELECTED) {
+                    config.alwaysAllowHttpHistory = false
+                    config.alwaysAllowWebSocketHistory = false
+                    alwaysAllowHttpHistoryCheckBox.isSelected = false
+                    alwaysAllowWebSocketHistoryCheckBox.isSelected = false
+                }
+                alwaysAllowHttpHistoryCheckBox.isEnabled = event.stateChange == ItemEvent.SELECTED
+                alwaysAllowWebSocketHistoryCheckBox.isEnabled = event.stateChange == ItemEvent.SELECTED
+            }
+        }
+
+        alwaysAllowHttpHistoryCheckBox = JCheckBox("Always allow HTTP history access").apply {
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = config.alwaysAllowHttpHistory
+            isEnabled = config.requireHistoryAccessApproval
+            font = Design.Typography.bodyMedium
+            foreground = Design.Colors.onSurfaceVariant
+            border = BorderFactory.createEmptyBorder(0, Design.Spacing.LG, 0, 0)
+            addItemListener { event ->
+                config.alwaysAllowHttpHistory = event.stateChange == ItemEvent.SELECTED
+            }
+        }
+
+        alwaysAllowWebSocketHistoryCheckBox = JCheckBox("Always allow WebSocket history access").apply {
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = config.alwaysAllowWebSocketHistory
+            isEnabled = config.requireHistoryAccessApproval
+            font = Design.Typography.bodyMedium
+            foreground = Design.Colors.onSurfaceVariant
+            border = BorderFactory.createEmptyBorder(0, Design.Spacing.LG, 0, 0)
+            addItemListener { event ->
+                config.alwaysAllowWebSocketHistory = event.stateChange == ItemEvent.SELECTED
+            }
+        }
+
         val mainOptionsPanel = Design.createCard().apply {
             alignmentX = LEFT_ALIGNMENT
         }
@@ -239,6 +284,12 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         mainOptionsPanel.add(configEditingToolingCheckBox)
         mainOptionsPanel.add(createVerticalStrut(Design.Spacing.MD))
         mainOptionsPanel.add(httpRequestApprovalCheckBox)
+        mainOptionsPanel.add(createVerticalStrut(Design.Spacing.MD))
+        mainOptionsPanel.add(historyAccessApprovalCheckBox)
+        mainOptionsPanel.add(createVerticalStrut(Design.Spacing.SM))
+        mainOptionsPanel.add(alwaysAllowHttpHistoryCheckBox)
+        mainOptionsPanel.add(createVerticalStrut(Design.Spacing.SM))
+        mainOptionsPanel.add(alwaysAllowWebSocketHistoryCheckBox)
 
         rightPanel.add(mainOptionsPanel)
         rightPanel.add(createVerticalStrut(Design.Spacing.LG))
@@ -272,7 +323,6 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             anchor = GridBagConstraints.WEST
         }
 
-        // Host field row
         gbc.gridx = 0
         gbc.gridy = 0
         gbc.fill = GridBagConstraints.NONE
@@ -290,7 +340,6 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         hostField.font = Design.Typography.bodyLarge
         formPanel.add(hostField, gbc)
 
-        // Port field row
         gbc.gridx = 0
         gbc.gridy = 1
         gbc.fill = GridBagConstraints.NONE
@@ -479,6 +528,14 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             }
         }
         config.addTargetsChangeListener(refreshListener)
+
+        val historyAccessRefreshListener = {
+            SwingUtilities.invokeLater {
+                alwaysAllowHttpHistoryCheckBox.isSelected = config.alwaysAllowHttpHistory
+                alwaysAllowWebSocketHistoryCheckBox.isSelected = config.alwaysAllowWebSocketHistory
+            }
+        }
+        config.addHistoryAccessChangeListener(historyAccessRefreshListener)
 
         val scrollPane = JScrollPane(targetsList).apply {
             maximumSize = Dimension(500, 220)

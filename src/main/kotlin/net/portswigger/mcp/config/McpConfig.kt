@@ -11,10 +11,32 @@ class McpConfig(storage: PersistedObject) {
     var host by storage.string("127.0.0.1")
     var port by storage.int(9876)
     var requireHttpRequestApproval by storage.boolean(true)
-    
+    var requireHistoryAccessApproval by storage.boolean(true)
+
+    private var _alwaysAllowHttpHistory by storage.boolean(false)
+    var alwaysAllowHttpHistory: Boolean
+        get() = _alwaysAllowHttpHistory
+        set(value) {
+            if (_alwaysAllowHttpHistory != value) {
+                _alwaysAllowHttpHistory = value
+                notifyHistoryAccessChanged()
+            }
+        }
+
+    private var _alwaysAllowWebSocketHistory by storage.boolean(false)
+    var alwaysAllowWebSocketHistory: Boolean
+        get() = _alwaysAllowWebSocketHistory
+        set(value) {
+            if (_alwaysAllowWebSocketHistory != value) {
+                _alwaysAllowWebSocketHistory = value
+                notifyHistoryAccessChanged()
+            }
+        }
+
     private var _autoApproveTargets by storage.stringList("")
     private val targetsChangeListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
-    
+    private val historyAccessChangeListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
     var autoApproveTargets: String
         get() = _autoApproveTargets
         set(value) {
@@ -23,7 +45,7 @@ class McpConfig(storage: PersistedObject) {
                 notifyTargetsChanged()
             }
         }
-    
+
     fun addAutoApproveTarget(target: String): Boolean {
         val currentTargets = getAutoApproveTargetsList()
         if (target.trim().isNotEmpty() && !currentTargets.contains(target.trim())) {
@@ -33,7 +55,7 @@ class McpConfig(storage: PersistedObject) {
         }
         return false
     }
-    
+
     fun removeAutoApproveTarget(target: String): Boolean {
         val currentTargets = getAutoApproveTargetsList()
         val newTargets = currentTargets.filter { it != target.trim() }
@@ -43,32 +65,26 @@ class McpConfig(storage: PersistedObject) {
         }
         return false
     }
-    
+
     fun getAutoApproveTargetsList(): List<String> {
         return if (_autoApproveTargets.isBlank()) {
             emptyList()
         } else {
-            _autoApproveTargets.split(",")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
+            _autoApproveTargets.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         }
     }
-    
+
     fun clearAutoApproveTargets() {
         autoApproveTargets = ""
     }
-    
+
     fun addTargetsChangeListener(listener: () -> Unit) {
         targetsChangeListeners.add(listener)
-    }
-    
-    fun removeTargetsChangeListener(listener: () -> Unit) {
-        targetsChangeListeners.remove(listener)
     }
 
     private fun notifyTargetsChanged() {
         val listeners = targetsChangeListeners.toList()
-        listeners.forEach { 
+        listeners.forEach {
             try {
                 it()
             } catch (e: Exception) {
@@ -76,35 +92,37 @@ class McpConfig(storage: PersistedObject) {
             }
         }
     }
+
+    fun addHistoryAccessChangeListener(listener: () -> Unit) {
+        historyAccessChangeListeners.add(listener)
+    }
+
+    private fun notifyHistoryAccessChanged() {
+        val listeners = historyAccessChangeListeners.toList()
+        listeners.forEach {
+            try {
+                it()
+            } catch (e: Exception) {
+                println("Warning: History access change listener failed: ${e.message}")
+            }
+        }
+    }
 }
 
 fun PersistedObject.boolean(default: Boolean = false) =
-    PersistedDelegate(
-        getter = { key -> getBoolean(key) ?: default },
-        setter = { key, value -> setBoolean(key, value) }
-    )
+    PersistedDelegate(getter = { key -> getBoolean(key) ?: default }, setter = { key, value -> setBoolean(key, value) })
 
 fun PersistedObject.string(default: String) =
-    PersistedDelegate(
-        getter = { key -> getString(key) ?: default },
-        setter = { key, value -> setString(key, value) }
-    )
+    PersistedDelegate(getter = { key -> getString(key) ?: default }, setter = { key, value -> setString(key, value) })
 
 fun PersistedObject.int(default: Int) =
-    PersistedDelegate(
-        getter = { key -> getInteger(key) ?: default },
-        setter = { key, value -> setInteger(key, value) }
-    )
+    PersistedDelegate(getter = { key -> getInteger(key) ?: default }, setter = { key, value -> setInteger(key, value) })
 
 fun PersistedObject.stringList(default: String) =
-    PersistedDelegate(
-        getter = { key -> getString(key) ?: default },
-        setter = { key, value -> setString(key, value) }
-    )
+    PersistedDelegate(getter = { key -> getString(key) ?: default }, setter = { key, value -> setString(key, value) })
 
 class PersistedDelegate<T>(
-    private val getter: (name: String) -> T,
-    private val setter: (name: String, value: T) -> Unit
+    private val getter: (name: String) -> T, private val setter: (name: String, value: T) -> Unit
 ) : ReadWriteProperty<Any, T> {
     override fun getValue(thisRef: Any, property: KProperty<*>) = getter(property.name)
     override fun setValue(thisRef: Any, property: KProperty<*>, value: T) = setter(property.name, value)
