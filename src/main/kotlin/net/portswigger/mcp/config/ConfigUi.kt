@@ -402,9 +402,11 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         panel.add(examplesLabel)
 
         val listModel = DefaultListModel<String>()
-        var rolloverIndex = -1
 
-        val targetsList = JList(listModel).apply {
+        val targetsList = object : JList<String>(listModel) {
+            private var rolloverIndex = -1
+
+            init {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             visibleRowCount = 5
             font = Design.Typography.bodyMedium
@@ -439,34 +441,63 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                 }
             }
 
-            addMouseMotionListener(object : java.awt.event.MouseMotionAdapter() {
-                override fun mouseMoved(e: java.awt.event.MouseEvent) {
-                    val index = locationToIndex(e.point)
-                    if (index >= 0 && getCellBounds(index, index)?.contains(e.point) == true) {
-                        if (rolloverIndex != index) {
-                            rolloverIndex = index
-                            repaint()
+                addMouseMotionListener(object : java.awt.event.MouseMotionAdapter() {
+                    override fun mouseMoved(e: java.awt.event.MouseEvent) {
+                        try {
+                            val index = locationToIndex(e.point)
+                            val newRolloverIndex = if (index >= 0 && index < model.size &&
+                                getCellBounds(index, index)?.contains(e.point) == true
+                            ) {
+                                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                                index
+                            } else {
+                                cursor = Cursor.getDefaultCursor()
+                                -1
+                            }
+
+                            if (rolloverIndex != newRolloverIndex) {
+                                rolloverIndex = newRolloverIndex
+                                repaint()
+                            }
+                        } catch (ex: Exception) {
+                            // Reset state on error
+                            rolloverIndex = -1
+                            cursor = Cursor.getDefaultCursor()
                         }
-                        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-                    } else {
+                    }
+                })
+
+                addMouseListener(object : java.awt.event.MouseAdapter() {
+                    override fun mouseExited(e: java.awt.event.MouseEvent) {
                         if (rolloverIndex != -1) {
                             rolloverIndex = -1
+                            cursor = Cursor.getDefaultCursor()
                             repaint()
                         }
-                        cursor = Cursor.getDefaultCursor()
                     }
-                }
-            })
+                })
 
-            addMouseListener(object : java.awt.event.MouseAdapter() {
-                override fun mouseExited(e: java.awt.event.MouseEvent) {
-                    if (rolloverIndex != -1) {
-                        rolloverIndex = -1
-                        repaint()
+                // Add keyboard support for accessibility
+                addKeyListener(object : java.awt.event.KeyAdapter() {
+                    override fun keyPressed(e: java.awt.event.KeyEvent) {
+                        when (e.keyCode) {
+                            java.awt.event.KeyEvent.VK_DELETE, java.awt.event.KeyEvent.VK_BACK_SPACE -> {
+                                if (selectedIndex >= 0 && selectedIndex < model.size) {
+                                    try {
+                                        removeTarget(selectedIndex, listModel)
+                                        e.consume()
+                                    } catch (ex: Exception) {
+                                        // Log error but don't crash the UI
+                                        ex.printStackTrace()
+                                    }
+                                }
+                            }
+                        }
                     }
-                    cursor = Cursor.getDefaultCursor()
-                }
-            })
+                })
+
+                isFocusable = true
+            }
         }
 
         updateTargetsList(listModel)
