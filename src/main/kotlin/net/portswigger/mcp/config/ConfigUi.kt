@@ -35,10 +35,28 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val panel = JPanel(BorderLayout())
     val component: JComponent get() = panel
 
-    private val enabledCheckBox = JCheckBox("Enabled").apply {
-        alignmentX = LEFT_ALIGNMENT
-        font = Design.Typography.bodyLarge
-        foreground = Design.Colors.onSurface
+    private val enabledToggle: JComponent = Design.createToggleSwitch(false) { enabled ->
+        if (suppressToggleEvents) {
+            return@createToggleSwitch
+        }
+
+        if (enabled) {
+            val error = getValidationError()
+
+            if (error != null) {
+                validationErrorLabel.text = error
+                validationErrorLabel.isVisible = true
+
+                suppressToggleEvents = true
+                (enabledToggle as ToggleSwitch).setState(false, animate = true)
+                suppressToggleEvents = false
+                return@createToggleSwitch
+            }
+        }
+
+        validationErrorLabel.isVisible = false
+        config.enabled = enabled
+        toggleListener?.invoke(enabled)
     }
     private val validationErrorLabel = WarningLabel()
 
@@ -53,39 +71,11 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private var suppressToggleEvents: Boolean = false
 
     init {
-        enabledCheckBox.isSelected = config.enabled
+        (enabledToggle as ToggleSwitch).setState(config.enabled, animate = false)
         hostField.text = config.host
         portField.text = config.port.toString()
 
         buildUi()
-
-        enabledCheckBox.addItemListener {
-            if (suppressToggleEvents) {
-                return@addItemListener
-            }
-
-            val checked = it.stateChange == ItemEvent.SELECTED
-
-            if (checked) {
-                val error = getValidationError()
-
-                if (error != null) {
-                    validationErrorLabel.text = error
-                    validationErrorLabel.isVisible = true
-
-                    suppressToggleEvents = true
-                    enabledCheckBox.isSelected = false
-                    suppressToggleEvents = false
-                    return@addItemListener
-                }
-            }
-
-            validationErrorLabel.isVisible = false
-
-            config.enabled = checked
-
-            toggleListener?.invoke(checked)
-        }
 
         trackChanges(hostField)
         trackChanges(portField)
@@ -112,22 +102,22 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
             when (state) {
                 ServerState.Starting, ServerState.Stopping -> {
-                    enabledCheckBox.isEnabled = false
+                    enabledToggle.isEnabled = false
                 }
 
                 ServerState.Running -> {
-                    enabledCheckBox.isEnabled = true
-                    enabledCheckBox.isSelected = true
+                    enabledToggle.isEnabled = true
+                    (enabledToggle as ToggleSwitch).setState(true, animate = false)
                 }
 
                 ServerState.Stopped -> {
-                    enabledCheckBox.isEnabled = true
-                    enabledCheckBox.isSelected = false
+                    enabledToggle.isEnabled = true
+                    (enabledToggle as ToggleSwitch).setState(false, animate = false)
                 }
 
                 is ServerState.Failed -> {
-                    enabledCheckBox.isEnabled = true
-                    enabledCheckBox.isSelected = false
+                    enabledToggle.isEnabled = true
+                    (enabledToggle as ToggleSwitch).setState(false, animate = false)
 
                     val friendlyMessage = when (state.exception) {
                         is UnresolvedAddressException -> "Unable to resolve address"
@@ -279,7 +269,19 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             alignmentX = LEFT_ALIGNMENT
         })
         mainOptionsPanel.add(createVerticalStrut(Design.Spacing.MD))
-        mainOptionsPanel.add(enabledCheckBox)
+
+        val enabledPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+        enabledPanel.add(JLabel("Enabled").apply {
+            font = Design.Typography.bodyLarge
+            foreground = Design.Colors.onSurface
+        })
+        enabledPanel.add(createHorizontalStrut(Design.Spacing.MD))
+        enabledPanel.add(enabledToggle)
+
+        mainOptionsPanel.add(enabledPanel)
         mainOptionsPanel.add(createVerticalStrut(Design.Spacing.MD))
         mainOptionsPanel.add(configEditingToolingCheckBox)
         mainOptionsPanel.add(createVerticalStrut(Design.Spacing.MD))
