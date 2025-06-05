@@ -446,8 +446,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                         try {
                             val index = locationToIndex(e.point)
                             val newRolloverIndex = if (index >= 0 && index < model.size && getCellBounds(
-                                    index,
-                                    index
+                                    index, index
                                 )?.contains(e.point) == true
                             ) {
                                 cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
@@ -562,7 +561,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                     } else {
                         Dialogs.showMessageDialog(
                             panel,
-                            "Invalid target format. Use hostname, hostname:port, or wildcard (*.domain)",
+                            "Invalid target format. Use hostname, IP address, hostname:port, or wildcard (*.domain)",
                             "Invalid Target",
                             ERROR_MESSAGE
                         )
@@ -615,86 +614,23 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private fun isValidTarget(target: String): Boolean {
         if (target.isBlank() || target.length > 255) return false
 
-        if (target.contains("..") || target.contains("//") || target.contains("@") || target.contains(" ") || target.contains(
-                "\t"
-            ) || target.contains("\n") || target.contains("\r")
-        ) return false
+        if (target.contains("\t") || target.contains("\n") || target.contains("\r")) return false
 
-        if (target.startsWith("*.")) {
-            val domain = target.substring(2)
-            if (domain.isEmpty() || domain.length > 253) return false
-
-            return isValidHostname(domain)
+        if (target.startsWith("[") && target.contains("]:")) {
+            val portPart = target.substringAfterLast(":")
+            val port = portPart.toIntOrNull()
+            return !(port == null || port < 1 || port > 65535)
         }
 
         val parts = target.split(":")
-        if (parts.size > 2) return false
-
-        val hostname = parts[0]
-        if (!isValidHostname(hostname)) return false
-
         if (parts.size == 2) {
             val port = parts[1].toIntOrNull()
             if (port == null || port < 1 || port > 65535) return false
+        } else if (parts.size > 2) {
+            return true
         }
 
         return true
-    }
-
-    private fun isValidHostname(hostname: String): Boolean {
-        if (hostname.isEmpty() || hostname.length > 253) return false
-
-        if (isValidIPv4(hostname)) return true
-
-        if (isValidIPv6(hostname)) return true
-
-        if (hostname.startsWith(".") || hostname.endsWith(".")) return false
-        if (hostname.contains("..")) return false
-
-        return hostname.matches(Regex("^[a-zA-Z0-9.-]+$")) && hostname.split(".").all { label ->
-            label.isNotEmpty() && label.length <= 63 && !label.startsWith("-") && !label.endsWith("-")
-        }
-    }
-
-    private fun isValidIPv4(ip: String): Boolean {
-        val parts = ip.split(".")
-        if (parts.size != 4) return false
-
-        return parts.all { part ->
-            val num = part.toIntOrNull()
-            num != null && num in 0..255 && (num == 0 || !part.startsWith("0"))
-        }
-    }
-
-    private fun isValidIPv6(ip: String): Boolean {
-        val address = if (ip.startsWith("[") && ip.endsWith("]")) {
-            ip.substring(1, ip.length - 1)
-        } else {
-            ip
-        }
-
-        if (address.contains(":::")) return false
-
-        val parts = if (address.contains("::")) {
-            val splitParts = address.split("::")
-            if (splitParts.size > 2) return false
-
-            val leftParts = splitParts[0].split(":").filter { it.isNotEmpty() }
-            val rightParts = if (splitParts.size == 2) {
-                splitParts[1].split(":").filter { it.isNotEmpty() }
-            } else emptyList()
-
-            if (leftParts.size + rightParts.size > 8) return false
-            leftParts + rightParts
-        } else {
-            val normalParts = address.split(":")
-            if (normalParts.size != 8) return false
-            normalParts
-        }
-
-        return parts.all { part ->
-            part.length <= 4 && part.matches(Regex("^[0-9a-fA-F]+$"))
-        }
     }
 
     private fun addTarget(target: String) {
