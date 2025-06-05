@@ -402,6 +402,8 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         panel.add(examplesLabel)
 
         val listModel = DefaultListModel<String>()
+        var rolloverIndex = -1
+
         val targetsList = JList(listModel).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             visibleRowCount = 5
@@ -419,9 +421,15 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                     border = BorderFactory.createEmptyBorder(
                         Design.Spacing.SM, Design.Spacing.MD, Design.Spacing.SM, Design.Spacing.MD
                     )
+
+                    val isRollover = index == rolloverIndex && !isSelected
+
                     if (isSelected) {
                         background = Design.Colors.listSelectionBackground
                         foreground = Design.Colors.listSelectionForeground
+                    } else if (isRollover) {
+                        background = Design.Colors.listHoverBackground
+                        foreground = Design.Colors.onSurface
                     } else {
                         background =
                             if (index % 2 == 0) Design.Colors.listBackground else Design.Colors.listAlternatingBackground
@@ -430,6 +438,35 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                     return this
                 }
             }
+
+            addMouseMotionListener(object : java.awt.event.MouseMotionAdapter() {
+                override fun mouseMoved(e: java.awt.event.MouseEvent) {
+                    val index = locationToIndex(e.point)
+                    if (index >= 0 && getCellBounds(index, index)?.contains(e.point) == true) {
+                        if (rolloverIndex != index) {
+                            rolloverIndex = index
+                            repaint()
+                        }
+                        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                    } else {
+                        if (rolloverIndex != -1) {
+                            rolloverIndex = -1
+                            repaint()
+                        }
+                        cursor = Cursor.getDefaultCursor()
+                    }
+                }
+            })
+
+            addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseExited(e: java.awt.event.MouseEvent) {
+                    if (rolloverIndex != -1) {
+                        rolloverIndex = -1
+                        repaint()
+                    }
+                    cursor = Cursor.getDefaultCursor()
+                }
+            })
         }
 
         updateTargetsList(listModel)

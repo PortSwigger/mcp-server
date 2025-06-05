@@ -25,6 +25,7 @@ object Design {
         val listBackground: Color = Color.WHITE
         val listSelectionBackground = Color(0xE3F2FD)
         val listSelectionForeground = Color(0x1976D2)
+        val listHoverBackground = Color(0xF0F8FF)
         val listAlternatingBackground = Color(0xFAFAFA)
         val listBorder = Color(0xDDDDDD)
     }
