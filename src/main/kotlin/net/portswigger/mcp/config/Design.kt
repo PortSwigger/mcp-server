@@ -23,6 +23,13 @@ object Design {
         val outline = Color(0xCCCCCC)
         val outlineVariant = Color(0xE0E0E0)
         val error = Color(0xB3261E)
+        val warning = Color(0xF57C00)
+        val transparent = Color(0, 0, 0, 0)
+        val listBackground: Color = Color.WHITE
+        val listSelectionBackground = Color(0xE3F2FD)
+        val listSelectionForeground = Color(0x1976D2)
+        val listAlternatingBackground = Color(0xFAFAFA)
+        val listBorder = Color(0xDDDDDD)
     }
 
     object Typography {
@@ -72,7 +79,7 @@ object Design {
 
     fun createTextButton(text: String, customSize: Dimension? = null): JButton {
         return JButton(text).apply {
-            background = Color(0, 0, 0, 0)
+            background = Colors.transparent
             foreground = Colors.primary
             font = Typography.labelLarge
             border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)

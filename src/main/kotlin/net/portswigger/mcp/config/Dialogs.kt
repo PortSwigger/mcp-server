@@ -7,14 +7,14 @@ import javax.swing.*
 import javax.swing.border.EmptyBorder
 
 object Dialogs {
-    
+
     private fun wrapText(text: String, maxWidth: Int = 50): String {
         if (text.length <= maxWidth) return text
-        
+
         val words = text.split(" ")
         val result = StringBuilder()
         var currentLine = StringBuilder()
-        
+
         for (word in words) {
             if (currentLine.length + word.length + 1 <= maxWidth) {
                 if (currentLine.isNotEmpty()) currentLine.append(" ")
@@ -25,15 +25,15 @@ object Dialogs {
                 currentLine = StringBuilder(word)
             }
         }
-        
+
         if (currentLine.isNotEmpty()) {
             if (result.isNotEmpty()) result.append("\n")
             result.append(currentLine.toString())
         }
-        
+
         return result.toString()
     }
-    
+
     private fun createDialog(parent: Component?, title: String): JDialog {
         val parentWindow = SwingUtilities.getWindowAncestor(parent)
         return JDialog(parentWindow, title, Dialog.ModalityType.APPLICATION_MODAL).apply {
@@ -68,7 +68,7 @@ object Dialogs {
 
             JOptionPane.WARNING_MESSAGE -> JLabel("⚠").apply {
                 font = Font("SF Pro Display", Font.PLAIN, 24)
-                foreground = Color(0xF57C00)
+                foreground = Design.Colors.warning
                 horizontalAlignment = SwingConstants.CENTER
                 preferredSize = Dimension(40, 40)
             }
@@ -211,7 +211,7 @@ object Dialogs {
                     Design.Spacing.SM, Design.Spacing.MD, Design.Spacing.SM, Design.Spacing.MD
                 )
             )
-            background = Color.WHITE
+            background = Design.Colors.listBackground
             foreground = Design.Colors.onSurface
         }
 

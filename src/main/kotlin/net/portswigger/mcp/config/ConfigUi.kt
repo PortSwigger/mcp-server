@@ -78,9 +78,9 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             }
 
             validationErrorLabel.isVisible = false
-            
+
             config.enabled = checked
-            
+
             toggleListener?.invoke(checked)
         }
 
@@ -209,7 +209,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             isSelected = config.configEditingTooling
             font = Design.Typography.bodyLarge
             foreground = Design.Colors.onSurface
-            addItemListener { event -> 
+            addItemListener { event ->
                 config.configEditingTooling = event.stateChange == ItemEvent.SELECTED
             }
         }
@@ -219,7 +219,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             isSelected = config.requireHttpRequestApproval
             font = Design.Typography.bodyLarge
             foreground = Design.Colors.onSurface
-            addItemListener { event -> 
+            addItemListener { event ->
                 config.requireHttpRequestApproval = event.stateChange == ItemEvent.SELECTED
             }
         }
@@ -440,7 +440,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             visibleRowCount = 5
             font = Design.Typography.bodyMedium
-            background = Color.WHITE
+            background = Design.Colors.listBackground
             foreground = Design.Colors.onSurface
             border = BorderFactory.createEmptyBorder(
                 Design.Spacing.SM, Design.Spacing.MD, Design.Spacing.SM, Design.Spacing.MD
@@ -454,10 +454,11 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                         Design.Spacing.SM, Design.Spacing.MD, Design.Spacing.SM, Design.Spacing.MD
                     )
                     if (isSelected) {
-                        background = Color(0xE3F2FD)
-                        foreground = Color(0x1976D2)
+                        background = Design.Colors.listSelectionBackground
+                        foreground = Design.Colors.listSelectionForeground
                     } else {
-                        background = if (index % 2 == 0) Color.WHITE else Color(0xFAFAFA)
+                        background =
+                            if (index % 2 == 0) Design.Colors.listBackground else Design.Colors.listAlternatingBackground
                         foreground = Design.Colors.onSurface
                     }
                     return this
@@ -478,10 +479,10 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             maximumSize = Dimension(500, 140)
             preferredSize = Dimension(500, 140)
             border = BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Color(0xDDDDDD), 1), BorderFactory.createEmptyBorder(1, 1, 1, 1)
+                BorderFactory.createLineBorder(Design.Colors.listBorder, 1), BorderFactory.createEmptyBorder(1, 1, 1, 1)
             )
-            background = Color.WHITE
-            viewport.background = Color.WHITE
+            background = Design.Colors.listBackground
+            viewport.background = Design.Colors.listBackground
             verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
             horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
         }
