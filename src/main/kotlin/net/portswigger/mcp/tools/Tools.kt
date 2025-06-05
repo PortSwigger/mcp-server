@@ -9,12 +9,12 @@ import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
 import io.modelcontextprotocol.kotlin.sdk.server.Server
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.toSerializableForm
 import net.portswigger.mcp.security.HttpRequestSecurity
-import kotlinx.coroutines.runBlocking
 import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
 import javax.swing.JTextArea
@@ -23,7 +23,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {
-            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config)
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content)
         }
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
@@ -41,8 +41,22 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpTool<SendHttp2Request>("Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter.") {
+        val http2RequestDisplay = buildString {
+            pseudoHeaders.forEach { (key, value) ->
+                val headerName = if (key.startsWith(":")) key else ":$key"
+                appendLine("$headerName: $value")
+            }
+            headers.forEach { (key, value) ->
+                appendLine("$key: $value")
+            }
+            if (requestBody.isNotBlank()) {
+                appendLine()
+                append(requestBody)
+            }
+        }
+        
         val allowed = runBlocking {
-            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config)
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, http2RequestDisplay)
         }
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")

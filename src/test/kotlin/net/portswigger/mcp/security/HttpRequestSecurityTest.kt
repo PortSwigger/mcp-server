@@ -6,10 +6,11 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import net.portswigger.mcp.config.McpConfig
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.*
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 
 class HttpRequestSecurityTest {
 
@@ -78,8 +79,8 @@ class HttpRequestSecurityTest {
     @Test
     fun `checkHttpRequestPermission should allow auto-approved hostname with port`() {
         config.addAutoApproveTarget("example.com:8080")
-        
-        coEvery { mockApprovalHandler.requestApproval("example.com", 80, config) } returns false
+
+        coEvery { mockApprovalHandler.requestApproval("example.com", 80, config, any()) } returns false
         
         runBlocking {
             val result1 = HttpRequestSecurity.checkHttpRequestPermission("example.com", 8080, config)
@@ -127,9 +128,9 @@ class HttpRequestSecurityTest {
         config.addAutoApproveTarget("example.com")
         config.addAutoApproveTarget("test.org:8080")
         config.addAutoApproveTarget("*.api.com")
-        
-        coEvery { mockApprovalHandler.requestApproval("test.org", 80, config) } returns false
-        coEvery { mockApprovalHandler.requestApproval("notfound.com", 80, config) } returns false
+
+        coEvery { mockApprovalHandler.requestApproval("test.org", 80, config, any()) } returns false
+        coEvery { mockApprovalHandler.requestApproval("notfound.com", 80, config, any()) } returns false
         
         runBlocking {
             assertTrue(HttpRequestSecurity.checkHttpRequestPermission("example.com", 80, config))
@@ -177,8 +178,8 @@ class HttpRequestSecurityTest {
             }
         }
         config = McpConfig(persistedObject)
-        
-        coEvery { mockApprovalHandler.requestApproval("empty.com", 80, config) } returns false
+
+        coEvery { mockApprovalHandler.requestApproval("empty.com", 80, config, any()) } returns false
         
         runBlocking {
             assertTrue(HttpRequestSecurity.checkHttpRequestPermission("example.com", 80, config))

@@ -278,54 +278,167 @@ object Dialogs {
     }
 
     fun showOptionDialog(
-        parent: Component?, message: String, title: String, options: Array<String>
+        parent: Component?, message: String, title: String, options: Array<String>, requestContent: String? = null
     ): Int {
         val dialog = createDialog(parent, title)
         var result = -1
 
-        val messageLabel = JLabel(message).apply {
+        val messageArea = JTextArea(message).apply {
             font = Design.Typography.bodyLarge
             foreground = Design.Colors.onSurface
-            horizontalAlignment = SwingConstants.CENTER
-        }
-
-        val contentPanel = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
             background = Design.Colors.surface
-            border = EmptyBorder(Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.LG, Design.Spacing.XL)
-        }
-
-        messageLabel.alignmentX = Component.CENTER_ALIGNMENT
-        contentPanel.add(messageLabel)
-        contentPanel.add(Box.createVerticalStrut(Design.Spacing.LG))
-
-        val buttonPanel = JPanel().apply {
-            layout = GridLayout(0, 1, 0, Design.Spacing.SM)
-            background = Design.Colors.surface
+            isEditable = false
+            isOpaque = false
+            lineWrap = true
+            wrapStyleWord = true
+            columns = 30
+            rows = 0
             alignmentX = Component.CENTER_ALIGNMENT
         }
 
-        options.forEachIndexed { index, option ->
-            val button = when (index) {
-                0 -> Design.createFilledButton(option)
-                options.size - 1 -> Design.createOutlinedButton(option)
-                else -> Design.createTextButton(option)
-            }.apply {
-                preferredSize = Dimension(200, 40)
-                addActionListener {
-                    result = index
-                    dialog.dispose()
-                }
-            }
-            buttonPanel.add(button)
+        val contentPanel = JPanel().apply {
+            background = Design.Colors.surface
+            border = EmptyBorder(Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.XL)
         }
 
-        contentPanel.add(buttonPanel)
+        if (!requestContent.isNullOrBlank()) {
+            contentPanel.layout = BorderLayout()
+
+            val leftPanel = JPanel().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                background = Design.Colors.surface
+                preferredSize = Dimension(400, 250)
+            }
+
+            val requestLabel = JLabel("HTTP Request:").apply {
+                font = Design.Typography.bodyMedium
+                foreground = Design.Colors.onSurface
+                alignmentX = Component.LEFT_ALIGNMENT
+            }
+            leftPanel.add(requestLabel)
+            leftPanel.add(Box.createVerticalStrut(Design.Spacing.SM))
+
+            val requestTextArea = JTextArea(requestContent).apply {
+                font = Font("Monaco", Font.PLAIN, 11)
+                foreground = Design.Colors.onSurface
+                background = Design.Colors.listBackground
+                isEditable = false
+                lineWrap = false
+                tabSize = 4
+            }
+
+            val scrollPane = JScrollPane(requestTextArea).apply {
+                preferredSize = Dimension(400, 200)
+                verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+                horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+                border = BorderFactory.createLineBorder(Design.Colors.outline, 1)
+            }
+
+            leftPanel.add(scrollPane)
+
+            val rightPanel = JPanel().apply {
+                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                background = Design.Colors.surface
+                preferredSize = Dimension(400, 400)
+                border = EmptyBorder(0, Design.Spacing.LG, 0, 0)
+            }
+
+            messageArea.alignmentX = Component.CENTER_ALIGNMENT
+            rightPanel.add(messageArea)
+            rightPanel.add(Box.createVerticalStrut(Design.Spacing.LG))
+            rightPanel.add(Box.createVerticalGlue())
+
+            val buttonPanel = JPanel().apply {
+                layout = GridLayout(2, 2, Design.Spacing.SM, Design.Spacing.SM)
+                background = Design.Colors.surface
+                alignmentX = Component.CENTER_ALIGNMENT
+                preferredSize = Dimension(390, 80)
+            }
+
+            options.forEachIndexed { index, option ->
+                val button = when (index) {
+                    0 -> Design.createFilledButton(option)
+                    options.size - 1 -> Design.createOutlinedButton(option)
+                    else -> Design.createTextButton(option)
+                }.apply {
+                    preferredSize = Dimension(190, 32)
+                    font = font.deriveFont(10f)
+                    addActionListener {
+                        result = index
+                        dialog.dispose()
+                    }
+                }
+                buttonPanel.add(button)
+            }
+
+            rightPanel.add(buttonPanel)
+
+            contentPanel.add(leftPanel, BorderLayout.WEST)
+            contentPanel.add(rightPanel, BorderLayout.EAST)
+        } else {
+            contentPanel.layout = BoxLayout(contentPanel, BoxLayout.Y_AXIS)
+
+            messageArea.alignmentX = Component.CENTER_ALIGNMENT
+            contentPanel.add(messageArea)
+            contentPanel.add(Box.createVerticalStrut(Design.Spacing.XL))
+
+            // Add button panel for single column layout - 2x2 grid
+            val buttonPanel = JPanel().apply {
+                layout = GridLayout(2, 2, Design.Spacing.SM, Design.Spacing.SM)
+                background = Design.Colors.surface
+                alignmentX = Component.CENTER_ALIGNMENT
+                preferredSize = Dimension(370, 80)
+            }
+
+            options.forEachIndexed { index, option ->
+                val button = when (index) {
+                    0 -> Design.createFilledButton(option)
+                    options.size - 1 -> Design.createOutlinedButton(option)
+                    else -> Design.createTextButton(option)
+                }.apply {
+                    preferredSize = Dimension(180, 32)
+                    font = font.deriveFont(10f)
+                    addActionListener {
+                        result = index
+                        dialog.dispose()
+                    }
+                }
+                buttonPanel.add(button)
+            }
+
+            contentPanel.add(buttonPanel)
+        }
 
         dialog.contentPane = contentPanel
+
+        if (requestContent.isNullOrBlank()) {
+            dialog.preferredSize = Dimension(420, 350)
+        } else {
+            dialog.preferredSize = Dimension(860, 400)
+        }
+
         dialog.pack()
-        dialog.setLocationRelativeTo(parent)
+
+        if (parent != null && parent.isDisplayable) {
+            dialog.setLocationRelativeTo(parent)
+
+            dialog.isAlwaysOnTop = true
+            dialog.toFront()
+            dialog.requestFocus()
+        } else {
+            val screenSize = Toolkit.getDefaultToolkit().screenSize
+            val dialogSize = dialog.size
+            dialog.setLocation(
+                (screenSize.width - dialogSize.width) / 2, (screenSize.height - dialogSize.height) / 2
+            )
+        }
+
         dialog.isVisible = true
+
+        SwingUtilities.invokeLater {
+            dialog.isAlwaysOnTop = false
+            dialog.toFront()
+        }
 
         return result
     }

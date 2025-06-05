@@ -7,11 +7,16 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 interface UserApprovalHandler {
-    suspend fun requestApproval(hostname: String, port: Int, config: McpConfig): Boolean
+    suspend fun requestApproval(hostname: String, port: Int, config: McpConfig, requestContent: String? = null): Boolean
 }
 
 class SwingUserApprovalHandler : UserApprovalHandler {
-    override suspend fun requestApproval(hostname: String, port: Int, config: McpConfig): Boolean {
+    override suspend fun requestApproval(
+        hostname: String,
+        port: Int,
+        config: McpConfig,
+        requestContent: String?
+    ): Boolean {
         return suspendCoroutine { continuation ->
             SwingUtilities.invokeLater {
                 val message = buildString {
@@ -19,38 +24,45 @@ class SwingUserApprovalHandler : UserApprovalHandler {
                     appendLine()
                     appendLine("Target: $hostname:$port")
                     appendLine()
-                    appendLine("Do you want to allow this request?")
-                    appendLine()
-                    appendLine("Note: This could be used to access internal services or")
-                    appendLine("perform server-side request forgery (SSRF) attacks.")
                 }
 
                 val options = arrayOf(
-                    "Allow Once",
-                    "Always Allow $hostname",
-                    "Always Allow $hostname:$port", 
-                    "Deny"
+                    "Allow Once", "Always Allow Host", "Always Allow Host:Port", "Deny"
                 )
 
+                val burpFrame = java.awt.Frame.getFrames().find { frame ->
+                    frame.isVisible && frame.isDisplayable && (
+                            frame.title.contains("Burp Suite", ignoreCase = true) ||
+                                    frame.title.contains("Professional", ignoreCase = true) ||
+                                    frame.title.contains("Community", ignoreCase = true) ||
+                                    frame.javaClass.name.contains("burp", ignoreCase = true) ||
+                                    frame.javaClass.simpleName.contains("Burp", ignoreCase = true)
+                            )
+                } ?: run {
+                    java.awt.Frame.getFrames()
+                        .filter { it.isVisible && it.isDisplayable }
+                        .maxByOrNull { it.width * it.height }
+                }
+
                 val result = Dialogs.showOptionDialog(
-                    null,
-                    message,
-                    "MCP HTTP Request Security",
-                    options
+                    burpFrame, message, "MCP HTTP Request Security", options, requestContent
                 )
 
                 when (result) {
                     0 -> {
                         continuation.resume(true)
                     }
+
                     1 -> {
                         config.addAutoApproveTarget(hostname)
                         continuation.resume(true)
                     }
+
                     2 -> {
                         config.addAutoApproveTarget("$hostname:$port")
                         continuation.resume(true)
                     }
+
                     else -> {
                         continuation.resume(false)
                     }
@@ -61,27 +73,30 @@ class SwingUserApprovalHandler : UserApprovalHandler {
 }
 
 object HttpRequestSecurity {
-    
+
     var approvalHandler: UserApprovalHandler = SwingUserApprovalHandler()
 
     private fun isAutoApproved(hostname: String, port: Int, config: McpConfig): Boolean {
         val target = "$hostname:$port"
         val hostOnly = hostname
         val targets = config.getAutoApproveTargetsList()
-        
+
         return targets.any { approved ->
-            approved.equals(target, ignoreCase = true) ||
-            approved.equals(hostOnly, ignoreCase = true) ||
-            (approved.startsWith("*.") && 
-             hostname.endsWith(approved.substring(2), ignoreCase = true) && 
-             hostname != approved.substring(2))
+            approved.equals(target, ignoreCase = true) || approved.equals(
+                hostOnly,
+                ignoreCase = true
+            ) || (approved.startsWith("*.") && hostname.endsWith(
+                approved.substring(2),
+                ignoreCase = true
+            ) && hostname != approved.substring(2))
         }
     }
 
     suspend fun checkHttpRequestPermission(
-        hostname: String, 
-        port: Int, 
-        config: McpConfig
+        hostname: String,
+        port: Int,
+        config: McpConfig,
+        requestContent: String? = null
     ): Boolean {
         if (!config.requireHttpRequestApproval) {
             return true
@@ -91,6 +106,6 @@ object HttpRequestSecurity {
             return true
         }
 
-        return approvalHandler.requestApproval(hostname, port, config)
+        return approvalHandler.requestApproval(hostname, port, config, requestContent)
     }
 }
