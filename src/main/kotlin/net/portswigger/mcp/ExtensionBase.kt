@@ -9,6 +9,7 @@ import net.portswigger.mcp.providers.ManualProxyInstallerProvider
 import net.portswigger.mcp.providers.ProxyJarManager
 import net.portswigger.mcp.server.KtorServerManager
 
+@Suppress("unused")
 class ExtensionBase : BurpExtension {
 
     override fun initialize(api: MontoyaApi) {
