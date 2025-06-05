@@ -45,16 +45,22 @@ object Design {
         const val XL = 32
     }
 
+    private fun applyButtonBaseStyle(button: JButton, customSize: Dimension?) {
+        button.apply {
+            font = Typography.labelLarge
+            isFocusPainted = false
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            minimumSize = Dimension(80, 40)
+            preferredSize = customSize ?: preferredSize
+        }
+    }
+
     fun createFilledButton(text: String, customSize: Dimension? = null): JButton {
         return JButton(text).apply {
             background = Colors.primary
             foreground = Colors.onPrimary
-            font = Typography.labelLarge
             border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)
-            isFocusPainted = false
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            preferredSize = customSize ?: Dimension(160, 40)
-            minimumSize = Dimension(80, 40)
+            applyButtonBaseStyle(this, customSize ?: Dimension(160, 40))
         }
     }
 
@@ -62,15 +68,11 @@ object Design {
         return JButton(text).apply {
             background = Colors.surface
             foreground = Colors.primary
-            font = Typography.labelLarge
             border = BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Colors.outline, 1),
                 BorderFactory.createEmptyBorder(Spacing.SM + 1, Spacing.LG - 1, Spacing.SM + 1, Spacing.LG - 1)
             )
-            isFocusPainted = false
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            preferredSize = customSize ?: Dimension(120, 40)
-            minimumSize = Dimension(80, 40)
+            applyButtonBaseStyle(this, customSize ?: Dimension(120, 40))
         }
     }
 
@@ -78,13 +80,9 @@ object Design {
         return JButton(text).apply {
             background = Colors.transparent
             foreground = Colors.primary
-            font = Typography.labelLarge
             border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)
-            isFocusPainted = false
             isContentAreaFilled = false
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            preferredSize = customSize ?: Dimension(100, 40)
-            minimumSize = Dimension(80, 40)
+            applyButtonBaseStyle(this, customSize ?: Dimension(100, 40))
         }
     }
 
@@ -99,23 +97,27 @@ object Design {
         }
     }
 
-    fun createToggleSwitch(initialState: Boolean = false, onToggle: (Boolean) -> Unit): JComponent {
+    fun createToggleSwitch(initialState: Boolean = false, onToggle: (Boolean) -> Unit): ToggleSwitch {
         return ToggleSwitch(initialState, onToggle)
     }
 }
 
 class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) -> Unit) : JComponent() {
 
-    private val trackWidth = 44
-    private val trackHeight = 24
-    private val thumbSize = 20
-    private val padding = 2
+    companion object {
+        private const val TRACK_WIDTH = 44
+        private const val TRACK_HEIGHT = 24
+        private const val THUMB_SIZE = 20
+        private const val PADDING = 2
+        private const val ANIMATION_DURATION = 150
+        private const val TIMER_DELAY = 16
+    }
 
     private var animationProgress = if (isOn) 1.0f else 0.0f
     private var animationTimer: Timer? = null
 
     init {
-        preferredSize = Dimension(trackWidth, trackHeight)
+        preferredSize = Dimension(TRACK_WIDTH, TRACK_HEIGHT)
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
 
         addMouseListener(object : MouseAdapter() {
@@ -148,12 +150,11 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
 
         val startProgress = animationProgress
         val targetProgress = if (isOn) 1.0f else 0.0f
-        val duration = 150
         val startTime = System.currentTimeMillis()
 
-        animationTimer = Timer(16) { _ ->
+        animationTimer = Timer(TIMER_DELAY) { _ ->
             val elapsed = System.currentTimeMillis() - startTime
-            val progress = (elapsed.toFloat() / duration).coerceIn(0.0f, 1.0f)
+            val progress = (elapsed.toFloat() / ANIMATION_DURATION).coerceIn(0.0f, 1.0f)
 
             animationProgress = startProgress + (targetProgress - startProgress) * progress
 
@@ -173,43 +174,36 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
         val g2 = g.create() as Graphics2D
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
 
-        val trackColor = if (isOn) Design.Colors.primary else Design.Colors.outline
-        g2.color = trackColor
-        val trackRect = RoundRectangle2D.Float(
-            0f,
-            0f,
-            trackWidth.toFloat(),
-            trackHeight.toFloat(),
-            trackHeight.toFloat(),
-            trackHeight.toFloat()
-        )
-        g2.fill(trackRect)
+        g2.color = if (isOn) Design.Colors.primary else Design.Colors.outline
+        g2.fill(createRoundRect(0f, 0f, TRACK_WIDTH.toFloat(), TRACK_HEIGHT.toFloat(), TRACK_HEIGHT.toFloat()))
 
-        val thumbX = padding + animationProgress * (trackWidth - thumbSize - 2 * padding)
-        val thumbY = padding.toFloat()
+        val thumbX = PADDING + animationProgress * (TRACK_WIDTH - THUMB_SIZE - 2 * PADDING)
+        val thumbY = PADDING.toFloat()
 
         g2.color = Color(0, 0, 0, 20)
-        val shadowRect = RoundRectangle2D.Float(
-            thumbX + 1,
-            thumbY + 1,
-            thumbSize.toFloat(),
-            thumbSize.toFloat(),
-            thumbSize.toFloat(),
-            thumbSize.toFloat()
+        g2.fill(
+            createRoundRect(
+                thumbX + 1,
+                thumbY + 1,
+                THUMB_SIZE.toFloat(),
+                THUMB_SIZE.toFloat(),
+                THUMB_SIZE.toFloat()
+            )
         )
-        g2.fill(shadowRect)
 
         g2.color = Color.WHITE
-        val thumbRect = RoundRectangle2D.Float(
-            thumbX,
-            thumbY,
-            thumbSize.toFloat(),
-            thumbSize.toFloat(),
-            thumbSize.toFloat(),
-            thumbSize.toFloat()
-        )
-        g2.fill(thumbRect)
+        g2.fill(createRoundRect(thumbX, thumbY, THUMB_SIZE.toFloat(), THUMB_SIZE.toFloat(), THUMB_SIZE.toFloat()))
 
         g2.dispose()
+    }
+
+    private fun createRoundRect(
+        x: Float,
+        y: Float,
+        width: Float,
+        height: Float,
+        arcSize: Float
+    ): RoundRectangle2D.Float {
+        return RoundRectangle2D.Float(x, y, width, height, arcSize, arcSize)
     }
 }

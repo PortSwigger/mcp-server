@@ -35,20 +35,15 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val panel = JPanel(BorderLayout())
     val component: JComponent get() = panel
 
-    private val enabledToggle: JComponent = Design.createToggleSwitch(false) { enabled ->
-        if (suppressToggleEvents) {
-            return@createToggleSwitch
-        }
+    private val enabledToggle: ToggleSwitch = Design.createToggleSwitch(false) { enabled ->
+        if (suppressToggleEvents) return@createToggleSwitch
 
         if (enabled) {
-            val error = getValidationError()
-
-            if (error != null) {
+            getValidationError()?.let { error ->
                 validationErrorLabel.text = error
                 validationErrorLabel.isVisible = true
-
                 suppressToggleEvents = true
-                (enabledToggle as ToggleSwitch).setState(false, animate = true)
+                enabledToggle.setState(false, animate = true)
                 suppressToggleEvents = false
                 return@createToggleSwitch
             }
@@ -71,7 +66,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private var suppressToggleEvents: Boolean = false
 
     init {
-        (enabledToggle as ToggleSwitch).setState(config.enabled, animate = false)
+        enabledToggle.setState(config.enabled, animate = false)
         hostField.text = config.host
         portField.text = config.port.toString()
 
@@ -107,17 +102,17 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
                 ServerState.Running -> {
                     enabledToggle.isEnabled = true
-                    (enabledToggle as ToggleSwitch).setState(true, animate = false)
+                    enabledToggle.setState(true, animate = false)
                 }
 
                 ServerState.Stopped -> {
                     enabledToggle.isEnabled = true
-                    (enabledToggle as ToggleSwitch).setState(false, animate = false)
+                    enabledToggle.setState(false, animate = false)
                 }
 
                 is ServerState.Failed -> {
                     enabledToggle.isEnabled = true
-                    (enabledToggle as ToggleSwitch).setState(false, animate = false)
+                    enabledToggle.setState(false, animate = false)
 
                     val friendlyMessage = when (state.exception) {
                         is UnresolvedAddressException -> "Unable to resolve address"
@@ -189,88 +184,63 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
         leftPanel.add(headerBox)
 
-        val rightPanel = JPanel().apply {
+        val rightPanelContent = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             background = Design.Colors.surface
             border = BorderFactory.createEmptyBorder(
-                Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.XL
+                Design.Spacing.LG, Design.Spacing.LG, Design.Spacing.LG, Design.Spacing.LG
             )
         }
 
-        val configEditingToolingCheckBox = JCheckBox("Enable tools that can edit your config").apply {
-            alignmentX = LEFT_ALIGNMENT
-            isSelected = config.configEditingTooling
-            font = Design.Typography.bodyLarge
-            foreground = Design.Colors.onSurface
-            addItemListener { event ->
-                config.configEditingTooling = event.stateChange == ItemEvent.SELECTED
-            }
+        val rightPanel = JScrollPane(rightPanelContent).apply {
+            border = null
+            background = Design.Colors.surface
+            viewport.background = Design.Colors.surface
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            verticalScrollBar.unitIncrement = 16
         }
 
-        val httpRequestApprovalCheckBox = JCheckBox("Require approval for HTTP requests").apply {
-            alignmentX = LEFT_ALIGNMENT
-            isSelected = config.requireHttpRequestApproval
-            font = Design.Typography.bodyLarge
-            foreground = Design.Colors.onSurface
-            addItemListener { event ->
-                config.requireHttpRequestApproval = event.stateChange == ItemEvent.SELECTED
+        val configEditingToolingCheckBox = createStandardCheckBox(
+            "Enable tools that can edit your config", config.configEditingTooling
+        ) { config.configEditingTooling = it }
+
+        val httpRequestApprovalCheckBox = createStandardCheckBox(
+            "Require approval for HTTP requests", config.requireHttpRequestApproval
+        ) { config.requireHttpRequestApproval = it }
+
+        val historyAccessApprovalCheckBox = createStandardCheckBox(
+            "Require approval for history access", config.requireHistoryAccessApproval
+        ) { enabled ->
+            config.requireHistoryAccessApproval = enabled
+            if (!enabled) {
+                config.alwaysAllowHttpHistory = false
+                config.alwaysAllowWebSocketHistory = false
+                alwaysAllowHttpHistoryCheckBox.isSelected = false
+                alwaysAllowWebSocketHistoryCheckBox.isSelected = false
             }
+            alwaysAllowHttpHistoryCheckBox.isEnabled = enabled
+            alwaysAllowWebSocketHistoryCheckBox.isEnabled = enabled
         }
 
-        val historyAccessApprovalCheckBox = JCheckBox("Require approval for history access").apply {
-            alignmentX = LEFT_ALIGNMENT
-            isSelected = config.requireHistoryAccessApproval
-            font = Design.Typography.bodyLarge
-            foreground = Design.Colors.onSurface
-            addItemListener { event ->
-                config.requireHistoryAccessApproval = event.stateChange == ItemEvent.SELECTED
-                if (event.stateChange != ItemEvent.SELECTED) {
-                    config.alwaysAllowHttpHistory = false
-                    config.alwaysAllowWebSocketHistory = false
-                    alwaysAllowHttpHistoryCheckBox.isSelected = false
-                    alwaysAllowWebSocketHistoryCheckBox.isSelected = false
-                }
-                alwaysAllowHttpHistoryCheckBox.isEnabled = event.stateChange == ItemEvent.SELECTED
-                alwaysAllowWebSocketHistoryCheckBox.isEnabled = event.stateChange == ItemEvent.SELECTED
-            }
-        }
+        alwaysAllowHttpHistoryCheckBox = createIndentedCheckBox(
+            "Always allow HTTP history access", config.alwaysAllowHttpHistory, config.requireHistoryAccessApproval
+        ) { config.alwaysAllowHttpHistory = it }
 
-        alwaysAllowHttpHistoryCheckBox = JCheckBox("Always allow HTTP history access").apply {
-            alignmentX = LEFT_ALIGNMENT
-            isSelected = config.alwaysAllowHttpHistory
-            isEnabled = config.requireHistoryAccessApproval
-            font = Design.Typography.bodyMedium
-            foreground = Design.Colors.onSurfaceVariant
-            border = BorderFactory.createEmptyBorder(0, Design.Spacing.LG, 0, 0)
-            addItemListener { event ->
-                config.alwaysAllowHttpHistory = event.stateChange == ItemEvent.SELECTED
-            }
-        }
-
-        alwaysAllowWebSocketHistoryCheckBox = JCheckBox("Always allow WebSocket history access").apply {
-            alignmentX = LEFT_ALIGNMENT
-            isSelected = config.alwaysAllowWebSocketHistory
-            isEnabled = config.requireHistoryAccessApproval
-            font = Design.Typography.bodyMedium
-            foreground = Design.Colors.onSurfaceVariant
-            border = BorderFactory.createEmptyBorder(0, Design.Spacing.LG, 0, 0)
-            addItemListener { event ->
-                config.alwaysAllowWebSocketHistory = event.stateChange == ItemEvent.SELECTED
-            }
-        }
+        alwaysAllowWebSocketHistoryCheckBox = createIndentedCheckBox(
+            "Always allow WebSocket history access",
+            config.alwaysAllowWebSocketHistory,
+            config.requireHistoryAccessApproval
+        ) { config.alwaysAllowWebSocketHistory = it }
 
         val mainOptionsPanel = Design.createCard().apply {
             alignmentX = LEFT_ALIGNMENT
         }
 
-        mainOptionsPanel.add(JLabel("Server Configuration").apply {
-            font = Design.Typography.titleMedium
-            foreground = Design.Colors.onSurface
-            alignmentX = LEFT_ALIGNMENT
-        })
+        mainOptionsPanel.add(createSectionLabel("Server Configuration"))
         mainOptionsPanel.add(createVerticalStrut(Design.Spacing.MD))
 
-        val enabledPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+        val enabledPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 4)).apply {
             isOpaque = false
             alignmentX = LEFT_ALIGNMENT
         }
@@ -293,100 +263,57 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         mainOptionsPanel.add(createVerticalStrut(Design.Spacing.SM))
         mainOptionsPanel.add(alwaysAllowWebSocketHistoryCheckBox)
 
-        rightPanel.add(mainOptionsPanel)
-        rightPanel.add(createVerticalStrut(Design.Spacing.LG))
+        rightPanelContent.add(mainOptionsPanel)
+        rightPanelContent.add(createVerticalStrut(Design.Spacing.LG))
 
         val autoApprovePanel = createAutoApprovePanel()
-        rightPanel.add(autoApprovePanel)
+        rightPanelContent.add(autoApprovePanel)
 
-        rightPanel.add(validationErrorLabel)
-        rightPanel.add(createVerticalStrut(15))
+        rightPanelContent.add(validationErrorLabel)
+        rightPanelContent.add(createVerticalStrut(15))
 
         val advancedPanel = Design.createCard().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             alignmentX = LEFT_ALIGNMENT
         }
 
-        advancedPanel.add(JLabel("Advanced Options").apply {
-            font = Design.Typography.titleMedium
-            foreground = Design.Colors.onSurface
-            alignmentX = LEFT_ALIGNMENT
-        })
+        advancedPanel.add(createSectionLabel("Advanced Options"))
         advancedPanel.add(createVerticalStrut(Design.Spacing.MD))
 
-        // Create the form panel with proper layout
-        val formPanel = JPanel(GridBagLayout()).apply {
-            isOpaque = false
-            alignmentX = LEFT_ALIGNMENT
-        }
-
-        val gbc = GridBagConstraints().apply {
-            insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, Design.Spacing.MD)
-            anchor = GridBagConstraints.WEST
-        }
-
-        gbc.gridx = 0
-        gbc.gridy = 0
-        gbc.fill = GridBagConstraints.NONE
-        gbc.weightx = 0.0
-        formPanel.add(JLabel("Server host:").apply {
-            font = Design.Typography.bodyLarge
-            foreground = Design.Colors.onSurface
-        }, gbc)
-
-        gbc.gridx = 1
-        gbc.fill = GridBagConstraints.HORIZONTAL
-        gbc.weightx = 1.0
-        gbc.insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, 0)
-        hostField.preferredSize = Dimension(200, 32)
-        hostField.font = Design.Typography.bodyLarge
-        formPanel.add(hostField, gbc)
-
-        gbc.gridx = 0
-        gbc.gridy = 1
-        gbc.fill = GridBagConstraints.NONE
-        gbc.weightx = 0.0
-        gbc.insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, Design.Spacing.MD)
-        formPanel.add(JLabel("Server port:").apply {
-            font = Design.Typography.bodyLarge
-            foreground = Design.Colors.onSurface
-        }, gbc)
-
-        gbc.gridx = 1
-        gbc.fill = GridBagConstraints.HORIZONTAL
-        gbc.weightx = 1.0
-        gbc.insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, 0)
-        portField.preferredSize = Dimension(200, 32)
-        portField.font = Design.Typography.bodyLarge
-        formPanel.add(portField, gbc)
+        val formPanel = createFormPanel(
+            "Server host:" to hostField, "Server port:" to portField
+        )
 
         advancedPanel.add(formPanel)
 
-        rightPanel.add(advancedPanel)
-        rightPanel.add(createVerticalGlue())
-        rightPanel.add(reinstallNotice)
-        rightPanel.add(createVerticalStrut(10))
+        rightPanelContent.add(advancedPanel)
+        rightPanelContent.add(createVerticalGlue())
+        rightPanelContent.add(reinstallNotice)
+        rightPanelContent.add(createVerticalStrut(10))
 
         val installationPanel = Design.createCard().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             alignmentX = LEFT_ALIGNMENT
         }
 
-        installationPanel.add(JLabel("Installation").apply {
-            font = Design.Typography.titleMedium
-            foreground = Design.Colors.onSurface
-            alignmentX = LEFT_ALIGNMENT
-        })
+        installationPanel.add(createSectionLabel("Installation"))
         installationPanel.add(createVerticalStrut(Design.Spacing.SM))
 
-        val installOptions = JPanel(FlowLayout(FlowLayout.LEFT, Design.Spacing.SM, Design.Spacing.SM)).apply {
+        val installOptions = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            alignmentX = LEFT_ALIGNMENT
+            isOpaque = false
+        }
+
+        val buttonRow = JPanel(FlowLayout(FlowLayout.LEFT, Design.Spacing.SM, Design.Spacing.SM)).apply {
             alignmentX = LEFT_ALIGNMENT
             isOpaque = false
         }
 
         providers.forEach { provider ->
             val item = Design.createFilledButton(provider.installButtonText).apply {
-                preferredSize = Dimension(240, 40)
+                preferredSize = Dimension(260, 40)
+                minimumSize = Dimension(200, 40)
             }
             item.addActionListener {
                 val confirmationText = provider.confirmationText
@@ -425,9 +352,10 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                     }
                 }
             }
-            installOptions.add(item)
+            buttonRow.add(item)
         }
 
+        installOptions.add(buttonRow)
         installationPanel.add(installOptions)
         installationPanel.add(createVerticalStrut(Design.Spacing.SM))
 
@@ -443,23 +371,9 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         )
         installationPanel.add(manualInstallPanel)
 
-        rightPanel.add(installationPanel)
+        rightPanelContent.add(installationPanel)
 
-        val columnsPanel = JPanel(GridBagLayout())
-        val c = GridBagConstraints().apply {
-            fill = GridBagConstraints.BOTH
-            weighty = 1.0
-        }
-
-        c.gridx = 0
-        c.gridy = 0
-        c.weightx = 0.35
-        columnsPanel.add(leftPanel, c)
-
-        c.gridx = 1
-        c.weightx = 0.65
-        columnsPanel.add(rightPanel, c)
-
+        val columnsPanel = ResponsiveColumnsPanel(leftPanel, rightPanel)
         panel.add(columnsPanel, BorderLayout.CENTER)
     }
 
@@ -469,11 +383,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             alignmentX = LEFT_ALIGNMENT
         }
 
-        panel.add(JLabel("Auto-Approved HTTP Targets").apply {
-            font = Design.Typography.titleMedium
-            foreground = Design.Colors.onSurface
-            alignmentX = LEFT_ALIGNMENT
-        })
+        panel.add(createSectionLabel("Auto-Approved HTTP Targets"))
         panel.add(createVerticalStrut(Design.Spacing.MD))
 
         val descLabel = JLabel("Specify domains and hosts that can be accessed without approval.").apply {
@@ -540,8 +450,9 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         config.addHistoryAccessChangeListener(historyAccessRefreshListener)
 
         val scrollPane = JScrollPane(targetsList).apply {
-            maximumSize = Dimension(500, 220)
-            preferredSize = Dimension(500, 220)
+            maximumSize = Dimension(Int.MAX_VALUE, 220)
+            preferredSize = Dimension(400, 220)
+            minimumSize = Dimension(250, 150)
             border = BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Design.Colors.listBorder, 1), BorderFactory.createEmptyBorder(1, 1, 1, 1)
             )
@@ -561,14 +472,15 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
         panel.add(tableContainer)
 
-        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, Design.Spacing.MD, Design.Spacing.SM)).apply {
+        val buttonsPanel = JPanel(FlowLayout(FlowLayout.LEFT, Design.Spacing.SM, Design.Spacing.SM)).apply {
             isOpaque = false
             alignmentX = LEFT_ALIGNMENT
             border = BorderFactory.createEmptyBorder(Design.Spacing.SM, 0, 0, 0)
         }
 
         val addButton = Design.createFilledButton("Add").apply {
-            preferredSize = Dimension(120, 40)
+            preferredSize = Dimension(100, 40)
+            minimumSize = Dimension(80, 40)
             addActionListener {
                 val input = Dialogs.showInputDialog(
                     panel,
@@ -594,6 +506,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
         val removeButton = Design.createOutlinedButton("Remove").apply {
             preferredSize = Dimension(120, 40)
+            minimumSize = Dimension(80, 40)
             addActionListener {
                 val selectedIndex = targetsList.selectedIndex
                 if (selectedIndex >= 0) {
@@ -604,6 +517,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
         val clearButton = Design.createOutlinedButton("Clear All").apply {
             preferredSize = Dimension(120, 40)
+            minimumSize = Dimension(80, 40)
             addActionListener {
                 val result = Dialogs.showConfirmDialog(
                     panel, "Remove all auto-approved targets?", "Clear All Targets", YES_NO_OPTION
@@ -676,5 +590,168 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
     private fun clearAllTargets() {
         config.clearAutoApproveTargets()
+    }
+
+    private fun createStandardCheckBox(
+        text: String, initialValue: Boolean, onChange: (Boolean) -> Unit
+    ): JCheckBox {
+        return JCheckBox(text).apply {
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = initialValue
+            font = Design.Typography.bodyLarge
+            foreground = Design.Colors.onSurface
+            addItemListener { event ->
+                onChange(event.stateChange == ItemEvent.SELECTED)
+            }
+        }
+    }
+
+    private fun createIndentedCheckBox(
+        text: String, initialValue: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit
+    ): JCheckBox {
+        return JCheckBox(text).apply {
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = initialValue
+            isEnabled = enabled
+            font = Design.Typography.bodyMedium
+            foreground = Design.Colors.onSurfaceVariant
+            border = BorderFactory.createEmptyBorder(0, Design.Spacing.LG, 0, 0)
+            addItemListener { event ->
+                onChange(event.stateChange == ItemEvent.SELECTED)
+            }
+        }
+    }
+
+    private fun createFormPanel(vararg fields: Pair<String, JComponent>): JPanel {
+        val formPanel = JPanel(GridBagLayout()).apply {
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+
+        val gbc = GridBagConstraints().apply {
+            insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, Design.Spacing.MD)
+            anchor = GridBagConstraints.WEST
+        }
+
+        fields.forEachIndexed { index, (labelText, field) ->
+            gbc.gridx = 0
+            gbc.gridy = index
+            gbc.fill = GridBagConstraints.NONE
+            gbc.weightx = 0.0
+            formPanel.add(JLabel(labelText).apply {
+                font = Design.Typography.bodyLarge
+                foreground = Design.Colors.onSurface
+            }, gbc)
+
+            gbc.gridx = 1
+            gbc.fill = GridBagConstraints.HORIZONTAL
+            gbc.weightx = 1.0
+            gbc.insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, 0)
+
+            if (field is JTextField) {
+                field.preferredSize = Dimension(200, 32)
+                field.font = Design.Typography.bodyLarge
+            }
+
+            formPanel.add(field, gbc)
+
+            gbc.insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, Design.Spacing.MD)
+        }
+
+        return formPanel
+    }
+
+    private fun createSectionLabel(text: String): JLabel {
+        return JLabel(text).apply {
+            font = Design.Typography.titleMedium
+            foreground = Design.Colors.onSurface
+            alignmentX = LEFT_ALIGNMENT
+        }
+    }
+}
+
+class ResponsiveColumnsPanel(private val leftPanel: JPanel, private val rightPanel: JScrollPane) : JPanel() {
+    private val minWidthForTwoColumns = 900
+    private val minWidthForLargePadding = 700
+    private var lastLayout = Layout.SINGLE_COLUMN
+    private var lastPaddingSize = PaddingSize.SMALL
+
+    enum class Layout { SINGLE_COLUMN, TWO_COLUMNS }
+    enum class PaddingSize { SMALL, LARGE }
+
+    init {
+        updateLayout()
+    }
+
+    override fun doLayout() {
+        super.doLayout()
+        val currentLayout = if (width >= minWidthForTwoColumns) Layout.TWO_COLUMNS else Layout.SINGLE_COLUMN
+        val currentPaddingSize = if (width >= minWidthForLargePadding) PaddingSize.LARGE else PaddingSize.SMALL
+
+        if (currentLayout != lastLayout || currentPaddingSize != lastPaddingSize) {
+            lastLayout = currentLayout
+            lastPaddingSize = currentPaddingSize
+            updateLayout()
+        }
+    }
+
+    private fun updateLayout() {
+        removeAll()
+
+        val padding = when (lastPaddingSize) {
+            PaddingSize.LARGE -> Design.Spacing.LG
+            PaddingSize.SMALL -> Design.Spacing.SM
+        }
+
+        if (rightPanel.viewport.view is JPanel) {
+            val contentPanel = rightPanel.viewport.view as JPanel
+            contentPanel.border = BorderFactory.createEmptyBorder(padding, padding, padding, padding)
+        }
+
+        when (lastLayout) {
+            Layout.TWO_COLUMNS -> {
+                layout = GridBagLayout()
+                val c = GridBagConstraints().apply {
+                    fill = GridBagConstraints.BOTH
+                    weighty = 1.0
+                }
+
+                c.gridx = 0
+                c.gridy = 0
+                c.weightx = 0.35
+                add(leftPanel, c)
+
+                c.gridx = 1
+                c.weightx = 0.65
+                add(rightPanel, c)
+            }
+
+            Layout.SINGLE_COLUMN -> {
+                layout = BorderLayout()
+                val singleColumnPanel = JPanel().apply {
+                    layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                    background = Design.Colors.surface
+                }
+
+                val headerWrapper = JPanel(BorderLayout()).apply {
+                    isOpaque = false
+                    border = BorderFactory.createEmptyBorder(padding, padding, Design.Spacing.MD, padding)
+                    add(leftPanel, BorderLayout.CENTER)
+                }
+
+                singleColumnPanel.add(headerWrapper)
+
+                val scrollWrapper = JPanel(BorderLayout()).apply {
+                    isOpaque = false
+                    add(rightPanel, BorderLayout.CENTER)
+                }
+                singleColumnPanel.add(scrollWrapper)
+
+                add(singleColumnPanel, BorderLayout.CENTER)
+            }
+        }
+
+        revalidate()
+        repaint()
     }
 }

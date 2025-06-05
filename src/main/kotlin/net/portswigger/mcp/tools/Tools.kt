@@ -21,6 +21,29 @@ import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
 import javax.swing.JTextArea
 
+private suspend fun checkHistoryPermissionOrDeny(
+    accessType: HistoryAccessType,
+    config: McpConfig,
+    api: MontoyaApi,
+    logMessage: String
+): Boolean {
+    val allowed = HistoryAccessSecurity.checkHistoryAccessPermission(accessType, config)
+    if (!allowed) {
+        api.logging().logToOutput("MCP $logMessage access denied")
+        return false
+    }
+    api.logging().logToOutput("MCP $logMessage access granted")
+    return true
+}
+
+private fun truncateIfNeeded(serialized: String): String {
+    return if (serialized.length > 5000) {
+        serialized.substring(0, 5000) + "... (truncated)"
+    } else {
+        serialized
+    }
+}
+
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
@@ -171,94 +194,52 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpPaginatedTool<GetProxyHttpHistory>("Displays items within the proxy HTTP history") {
         val allowed = runBlocking {
-            HistoryAccessSecurity.checkHistoryAccessPermission(HistoryAccessType.HTTP_HISTORY, config)
+            checkHistoryPermissionOrDeny(HistoryAccessType.HTTP_HISTORY, config, api, "HTTP history")
         }
         if (!allowed) {
-            api.logging().logToOutput("MCP HTTP history access denied")
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        api.logging().logToOutput("MCP HTTP history access granted")
         api.proxy().history().asSequence()
-            .map { 
-                val serialized = Json.encodeToString(it.toSerializableForm())
-                if (serialized.length > 5000) {
-                    val truncated = serialized.substring(0, 5000) + "... (truncated)"
-                    truncated
-                } else {
-                    serialized
-                }
-            }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
         val allowed = runBlocking {
-            HistoryAccessSecurity.checkHistoryAccessPermission(HistoryAccessType.HTTP_HISTORY, config)
+            checkHistoryPermissionOrDeny(HistoryAccessType.HTTP_HISTORY, config, api, "HTTP history")
         }
         if (!allowed) {
-            api.logging().logToOutput("MCP HTTP history access denied")
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        api.logging().logToOutput("MCP HTTP history access granted")
         val compiledRegex = Pattern.compile(regex)
-
         api.proxy().history { it.contains(compiledRegex) }.asSequence()
-            .map { 
-                val serialized = Json.encodeToString(it.toSerializableForm())
-                if (serialized.length > 5000) {
-                    val truncated = serialized.substring(0, 5000) + "... (truncated)"
-                    truncated
-                } else {
-                    serialized
-                }
-            }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
         val allowed = runBlocking {
-            HistoryAccessSecurity.checkHistoryAccessPermission(HistoryAccessType.WEBSOCKET_HISTORY, config)
+            checkHistoryPermissionOrDeny(HistoryAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
         }
         if (!allowed) {
-            api.logging().logToOutput("MCP WebSocket history access denied")
             return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
         }
 
-        api.logging().logToOutput("MCP WebSocket history access granted")
         api.proxy().webSocketHistory().asSequence()
-            .map {
-                val serialized = Json.encodeToString(it.toSerializableForm())
-                if (serialized.length > 5000) {
-                    val truncated = serialized.substring(0, 5000) + "... (truncated)"
-                    truncated
-                } else {
-                    serialized
-                }
-            }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistoryRegex>("Displays items matching a specified regex within the proxy WebSocket history") {
         val allowed = runBlocking {
-            HistoryAccessSecurity.checkHistoryAccessPermission(HistoryAccessType.WEBSOCKET_HISTORY, config)
+            checkHistoryPermissionOrDeny(HistoryAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
         }
         if (!allowed) {
-            api.logging().logToOutput("MCP WebSocket history access denied")
             return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
         }
 
-        api.logging().logToOutput("MCP WebSocket history access granted")
         val compiledRegex = Pattern.compile(regex)
-
         api.proxy().webSocketHistory { it.contains(compiledRegex) }.asSequence()
-            .map { 
-                val serialized = Json.encodeToString(it.toSerializableForm())
-                if (serialized.length > 5000) {
-                    val truncated = serialized.substring(0, 5000) + "... (truncated)"
-                    truncated
-                } else {
-                    serialized
-                }
-            }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
     mcpTool<SetTaskExecutionEngineState>("Sets the state of Burp's task execution engine (paused or unpaused)") {

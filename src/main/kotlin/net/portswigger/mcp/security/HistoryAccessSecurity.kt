@@ -6,8 +6,8 @@ import javax.swing.SwingUtilities
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
-enum class HistoryAccessType {
-    HTTP_HISTORY, WEBSOCKET_HISTORY
+enum class HistoryAccessType() {
+    HTTP_HISTORY(), WEBSOCKET_HISTORY();
 }
 
 interface HistoryAccessApprovalHandler {
@@ -36,21 +36,7 @@ class SwingHistoryAccessApprovalHandler : HistoryAccessApprovalHandler {
                     "Allow Once", "Always Allow $historyTypeName", "Deny"
                 )
 
-                val burpFrame = java.awt.Frame.getFrames().find { frame ->
-                    frame.isVisible && frame.isDisplayable && (frame.title.contains(
-                        "Burp Suite",
-                        ignoreCase = true
-                    ) || frame.title.contains("Professional", ignoreCase = true) || frame.title.contains(
-                        "Community",
-                        ignoreCase = true
-                    ) || frame.javaClass.name.contains(
-                        "burp",
-                        ignoreCase = true
-                    ) || frame.javaClass.simpleName.contains("Burp", ignoreCase = true))
-                } ?: run {
-                    java.awt.Frame.getFrames().filter { it.isVisible && it.isDisplayable }
-                        .maxByOrNull { it.width * it.height }
-                }
+                val burpFrame = findBurpFrame()
 
                 val result = Dialogs.showOptionDialog(
                     burpFrame, message, "MCP History Access Security", options
