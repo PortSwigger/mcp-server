@@ -481,8 +481,8 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         config.addTargetsChangeListener(refreshListener)
 
         val scrollPane = JScrollPane(targetsList).apply {
-            maximumSize = Dimension(500, 140)
-            preferredSize = Dimension(500, 140)
+            maximumSize = Dimension(500, 220)
+            preferredSize = Dimension(500, 220)
             border = BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Design.Colors.listBorder, 1), BorderFactory.createEmptyBorder(1, 1, 1, 1)
             )
