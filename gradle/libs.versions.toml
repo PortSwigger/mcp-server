@@ -1,0 +1,62 @@
+[versions]
+# Build System
+kotlin = "2.1.0"
+ktor = "3.1.1"
+
+# Runtime Dependencies
+kotlinx-serialization = "1.8.0"
+mcp-sdk = "0.4.0"
+burp-montoya = "2025.2"
+
+# Test Dependencies
+mockk = "1.13.17"
+
+[libraries]
+# Kotlin
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+
+# Ktor Server
+ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
+ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
+ktor-server-content-negotiation = { module = "io.ktor:ktor-server-content-negotiation", version.ref = "ktor" }
+ktor-server-cors = { module = "io.ktor:ktor-server-cors", version.ref = "ktor" }
+ktor-server-sse = { module = "io.ktor:ktor-server-sse", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+
+# MCP
+mcp-kotlin-sdk = { module = "io.modelcontextprotocol:kotlin-sdk", version.ref = "mcp-sdk" }
+
+# Montoya
+burp-montoya-api = { module = "net.portswigger.burp.extensions:montoya-api", version.ref = "burp-montoya" }
+
+# Test Dependencies
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
+ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+
+[bundles]
+ktor-server = [
+    "ktor-server-core",
+    "ktor-server-netty", 
+    "ktor-server-content-negotiation",
+    "ktor-server-cors",
+    "ktor-server-sse",
+    "ktor-serialization-kotlinx-json"
+]
+
+ktor-test = [
+    "ktor-server-test-host",
+    "ktor-client-content-negotiation"
+]
+
+test-framework = [
+    "kotlin-test",
+    "mockk"
+]
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ktor = { id = "io.ktor.plugin", version.ref = "ktor" }

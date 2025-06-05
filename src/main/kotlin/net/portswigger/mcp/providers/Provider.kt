@@ -8,7 +8,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import javax.swing.JFileChooser
-import javax.swing.JOptionPane
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -27,7 +26,8 @@ class ClaudeDesktopProvider(private val logging: Logging, private val proxyJarMa
 
     override val name = "Claude Desktop"
     override val installButtonText = "Install to $name"
-    override val confirmationText = "Install to $name?\nThis will create an entry within $name's MCP configuration file ($claudeConfigFileName)"
+    override val confirmationText =
+        "Install to $name?\nThis will create an entry within $name's MCP configuration file ($claudeConfigFileName)"
 
     override fun install(config: McpConfig): String {
         val proxyJarFile = proxyJarManager.getProxyJar()
@@ -117,7 +117,8 @@ class ClaudeDesktopProvider(private val logging: Logging, private val proxyJarMa
     }
 }
 
-class ManualProxyInstallerProvider(private val logging: Logging, private val proxyJarManager: ProxyJarManager) : Provider {
+class ManualProxyInstallerProvider(private val logging: Logging, private val proxyJarManager: ProxyJarManager) :
+    Provider {
     override val name = "Proxy jar"
     override val installButtonText = "Extract server proxy jar"
     override val confirmationText = null

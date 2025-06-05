@@ -1,21 +1,15 @@
 package net.portswigger.mcp.security
 
+import net.portswigger.mcp.config.Dialogs
 import net.portswigger.mcp.config.McpConfig
-import javax.swing.JOptionPane
 import javax.swing.SwingUtilities
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
-/**
- * Interface for user approval dialogs to enable testing
- */
 interface UserApprovalHandler {
     suspend fun requestApproval(hostname: String, port: Int, config: McpConfig): Boolean
 }
 
-/**
- * Default implementation that shows actual Swing dialogs
- */
 class SwingUserApprovalHandler : UserApprovalHandler {
     override suspend fun requestApproval(hostname: String, port: Int, config: McpConfig): Boolean {
         return suspendCoroutine { continuation ->
@@ -38,15 +32,11 @@ class SwingUserApprovalHandler : UserApprovalHandler {
                     "Deny"
                 )
 
-                val result = JOptionPane.showOptionDialog(
+                val result = Dialogs.showOptionDialog(
                     null,
                     message,
                     "MCP HTTP Request Security",
-                    JOptionPane.YES_NO_CANCEL_OPTION,
-                    JOptionPane.WARNING_MESSAGE,
-                    null,
-                    options,
-                    options[3] // Default to "Deny"
+                    options
                 )
 
                 when (result) {

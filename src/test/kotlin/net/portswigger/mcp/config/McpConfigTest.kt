@@ -18,7 +18,14 @@ class McpConfigTest {
         val storage = mutableMapOf<String, Any>()
         
         persistedObject = mockk<PersistedObject>().apply {
-            every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
+            every { getBoolean(any()) } answers { 
+                val key = firstArg<String>()
+                storage[key] as? Boolean ?: when (key) {
+                    "enabled" -> true
+                    "requireHttpRequestApproval" -> true
+                    else -> false
+                }
+            }
             every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
             every { getInteger(any()) } answers { storage[firstArg()] as? Int ?: 0 }
             every { setBoolean(any(), any()) } answers { 
@@ -187,7 +194,6 @@ class McpConfigTest {
         config.addTargetsChangeListener(badListener)
         config.addTargetsChangeListener(goodListener)
         
-        // Should not throw exception
         assertDoesNotThrow {
             config.addAutoApproveTarget("example.com")
         }
@@ -223,11 +229,36 @@ class McpConfigTest {
         config.autoApproveTargets = "example.com"
         assertEquals(1, notificationCount)
         
-        // Setting same value should not notify
         config.autoApproveTargets = "example.com"
         assertEquals(1, notificationCount)
         
         config.autoApproveTargets = "test.org"
         assertEquals(2, notificationCount)
+    }
+
+    @Test
+    fun `configEditingTooling should persist correctly`() {
+        assertFalse(config.configEditingTooling)
+        
+        config.configEditingTooling = true
+        assertTrue(config.configEditingTooling)
+        verify { persistedObject.setBoolean("configEditingTooling", true) }
+        
+        config.configEditingTooling = false
+        assertFalse(config.configEditingTooling)
+        verify { persistedObject.setBoolean("configEditingTooling", false) }
+    }
+
+    @Test
+    fun `requireHttpRequestApproval should persist correctly`() {
+        assertTrue(config.requireHttpRequestApproval)
+        
+        config.requireHttpRequestApproval = false
+        assertFalse(config.requireHttpRequestApproval)
+        verify { persistedObject.setBoolean("requireHttpRequestApproval", false) }
+        
+        config.requireHttpRequestApproval = true
+        assertTrue(config.requireHttpRequestApproval)
+        verify { persistedObject.setBoolean("requireHttpRequestApproval", true) }
     }
 }
