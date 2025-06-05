@@ -251,6 +251,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
 
         val advancedPanel = Design.createCard().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            alignmentX = LEFT_ALIGNMENT
         }
 
         advancedPanel.add(JLabel("Advanced Options").apply {
@@ -260,51 +261,57 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         })
         advancedPanel.add(createVerticalStrut(Design.Spacing.MD))
 
-        JPanel(GridBagLayout()).apply {
-            border = BorderFactory.createTitledBorder(
-                BorderFactory.createEtchedBorder(), "Advanced Options"
-            )
+        // Create the form panel with proper layout
+        val formPanel = JPanel(GridBagLayout()).apply {
             isOpaque = false
-        }
-
-        val gbc = GridBagConstraints().apply {
-            insets = Insets(8, 10, 8, 10)
-            anchor = GridBagConstraints.WEST
-        }
-
-        gbc.gridy = 0
-        advancedPanel.add(createVerticalStrut(5), gbc)
-
-        gbc.gridy = 1
-        gbc.gridx = 0
-        advancedPanel.add(JLabel("Server host:"), gbc)
-        gbc.gridx = 1
-        gbc.fill = GridBagConstraints.HORIZONTAL
-        gbc.weightx = 1.0
-        advancedPanel.add(hostField, gbc)
-
-        gbc.gridx = 0
-        gbc.gridy = 2
-        gbc.fill = GridBagConstraints.NONE
-        gbc.weightx = 0.0
-        advancedPanel.add(JLabel("Server port:"), gbc)
-        gbc.gridx = 1
-        gbc.fill = GridBagConstraints.HORIZONTAL
-        gbc.weightx = 1.0
-        advancedPanel.add(portField, gbc)
-
-        gbc.gridy = 3
-        gbc.gridx = 0
-        gbc.gridwidth = 2
-        advancedPanel.add(createVerticalStrut(5), gbc)
-
-        val advancedWrapper = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
-            isOpaque = false
-            add(advancedPanel)
             alignmentX = LEFT_ALIGNMENT
         }
 
-        rightPanel.add(advancedWrapper)
+        val gbc = GridBagConstraints().apply {
+            insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, Design.Spacing.MD)
+            anchor = GridBagConstraints.WEST
+        }
+
+        // Host field row
+        gbc.gridx = 0
+        gbc.gridy = 0
+        gbc.fill = GridBagConstraints.NONE
+        gbc.weightx = 0.0
+        formPanel.add(JLabel("Server host:").apply {
+            font = Design.Typography.bodyLarge
+            foreground = Design.Colors.onSurface
+        }, gbc)
+
+        gbc.gridx = 1
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        gbc.weightx = 1.0
+        gbc.insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, 0)
+        hostField.preferredSize = Dimension(200, 32)
+        hostField.font = Design.Typography.bodyLarge
+        formPanel.add(hostField, gbc)
+
+        // Port field row
+        gbc.gridx = 0
+        gbc.gridy = 1
+        gbc.fill = GridBagConstraints.NONE
+        gbc.weightx = 0.0
+        gbc.insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, Design.Spacing.MD)
+        formPanel.add(JLabel("Server port:").apply {
+            font = Design.Typography.bodyLarge
+            foreground = Design.Colors.onSurface
+        }, gbc)
+
+        gbc.gridx = 1
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        gbc.weightx = 1.0
+        gbc.insets = Insets(Design.Spacing.SM, 0, Design.Spacing.SM, 0)
+        portField.preferredSize = Dimension(200, 32)
+        portField.font = Design.Typography.bodyLarge
+        formPanel.add(portField, gbc)
+
+        advancedPanel.add(formPanel)
+
+        rightPanel.add(advancedPanel)
         rightPanel.add(createVerticalGlue())
         rightPanel.add(reinstallNotice)
         rightPanel.add(createVerticalStrut(10))
@@ -319,9 +326,9 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             foreground = Design.Colors.onSurface
             alignmentX = LEFT_ALIGNMENT
         })
-        installationPanel.add(createVerticalStrut(Design.Spacing.MD))
+        installationPanel.add(createVerticalStrut(Design.Spacing.SM))
 
-        val installOptions = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
+        val installOptions = JPanel(FlowLayout(FlowLayout.LEFT, Design.Spacing.SM, Design.Spacing.SM)).apply {
             alignmentX = LEFT_ALIGNMENT
             isOpaque = false
         }
@@ -370,11 +377,10 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             installOptions.add(item)
         }
 
-        installationPanel.add(createVerticalStrut(8))
         installationPanel.add(installOptions)
-        installationPanel.add(createVerticalStrut(5))
+        installationPanel.add(createVerticalStrut(Design.Spacing.SM))
 
-        val manualInstallPanel = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
+        val manualInstallPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
             alignmentX = LEFT_ALIGNMENT
             isOpaque = false
         }
@@ -385,7 +391,6 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
             )
         )
         installationPanel.add(manualInstallPanel)
-        installationPanel.add(createVerticalStrut(8))
 
         rightPanel.add(installationPanel)
 
