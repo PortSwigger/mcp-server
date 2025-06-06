@@ -12,22 +12,22 @@ import javax.swing.*
 object Design {
 
     object Colors {
-        val primary = Color(0xD86633)
-        val onPrimary = Color(0xFFFFFF)
-        val surface = Color(0xFFFBFF)
-        val onSurface = Color(0x1A1A1A)
-        val onSurfaceVariant = Color(0x666666)
-        val outline = Color(0xCCCCCC)
-        val outlineVariant = Color(0xE0E0E0)
-        val error = Color(0xB3261E)
-        val warning = Color(0xF57C00)
+        val primary: Color get() = UIManager.getColor("Burp.primaryButtonBackground") ?: Color(0xD86633)
+        val onPrimary: Color get() = UIManager.getColor("Burp.primaryButtonForeground") ?: Color.WHITE
+        val surface: Color get() = UIManager.getColor("Panel.background") ?: Color(0xFFFBFF)
+        val onSurface: Color get() = UIManager.getColor("Label.foreground") ?: Color(0x1A1A1A)
+        val onSurfaceVariant: Color get() = UIManager.getColor("Label.disabledForeground") ?: Color(0x666666)
+        val outline: Color get() = UIManager.getColor("Component.borderColor") ?: Color(0xCCCCCC)
+        val outlineVariant: Color get() = UIManager.getColor("Separator.foreground") ?: Color(0xE0E0E0)
+        val error: Color get() = UIManager.getColor("Burp.errorColor") ?: Color(0xB3261E)
+        val warning: Color get() = UIManager.getColor("Burp.warningColor") ?: Color(0xF57C00)
         val transparent = Color(0, 0, 0, 0)
-        val listBackground: Color = Color.WHITE
-        val listSelectionBackground = Color(0xE3F2FD)
-        val listSelectionForeground = Color(0x1976D2)
-        val listHoverBackground = Color(0xF0F8FF)
-        val listAlternatingBackground = Color(0xFAFAFA)
-        val listBorder = Color(0xDDDDDD)
+        val listBackground: Color get() = UIManager.getColor("List.background") ?: Color.WHITE
+        val listSelectionBackground: Color get() = UIManager.getColor("List.selectionBackground") ?: Color(0xE3F2FD)
+        val listSelectionForeground: Color get() = UIManager.getColor("List.selectionForeground") ?: Color(0x1976D2)
+        val listHoverBackground: Color get() = UIManager.getColor("List.hoverBackground") ?: Color(0xF0F8FF)
+        val listAlternatingBackground: Color get() = UIManager.getColor("List.alternateRowColor") ?: Color(0xFAFAFA)
+        val listBorder: Color get() = UIManager.getColor("List.border") ?: Color(0xDDDDDD)
     }
 
     object Typography {
@@ -57,44 +57,66 @@ object Design {
     }
 
     fun createFilledButton(text: String, customSize: Dimension? = null): JButton {
-        return JButton(text).apply {
-            background = Colors.primary
-            foreground = Colors.onPrimary
-            border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)
-            applyButtonBaseStyle(this, customSize ?: Dimension(160, 40))
+        return object : JButton(text) {
+            init {
+                updateColors()
+                applyButtonBaseStyle(this, customSize ?: Dimension(160, 40))
+            }
+
+            override fun updateUI() {
+                super.updateUI()
+                updateColors()
+            }
+
+            private fun updateColors() {
+                background = Colors.primary
+                foreground = Colors.onPrimary
+                border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)
+            }
         }
     }
 
     fun createOutlinedButton(text: String, customSize: Dimension? = null): JButton {
-        return JButton(text).apply {
-            background = Colors.surface
-            foreground = Colors.primary
-            border = BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Colors.outline, 1),
-                BorderFactory.createEmptyBorder(Spacing.SM + 1, Spacing.LG - 1, Spacing.SM + 1, Spacing.LG - 1)
-            )
-            applyButtonBaseStyle(this, customSize ?: Dimension(120, 40))
+        return object : JButton(text) {
+            init {
+                updateColors()
+                applyButtonBaseStyle(this, customSize ?: Dimension(120, 40))
+            }
+
+            override fun updateUI() {
+                super.updateUI()
+                updateColors()
+            }
+
+            private fun updateColors() {
+                background = Colors.surface
+                foreground = Colors.primary
+                border = BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(Colors.outline, 1),
+                    BorderFactory.createEmptyBorder(Spacing.SM + 1, Spacing.LG - 1, Spacing.SM + 1, Spacing.LG - 1)
+                )
+            }
         }
     }
 
     fun createTextButton(text: String, customSize: Dimension? = null): JButton {
-        return JButton(text).apply {
-            background = Colors.transparent
-            foreground = Colors.primary
-            border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)
-            isContentAreaFilled = false
-            applyButtonBaseStyle(this, customSize ?: Dimension(100, 40))
-        }
-    }
+        return object : JButton(text) {
+            init {
+                updateColors()
+                isContentAreaFilled = false
+                applyButtonBaseStyle(this, customSize ?: Dimension(100, 40))
+            }
 
-    fun createCard(): JPanel {
-        return JPanel().apply {
-            background = Colors.surface
-            border = BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Colors.outlineVariant, 1),
-                BorderFactory.createEmptyBorder(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
-            )
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            override fun updateUI() {
+                super.updateUI()
+                updateColors()
+            }
+
+            private fun updateColors() {
+                background = Colors.transparent
+                foreground = Colors.primary
+                border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)
+            }
         }
     }
 
@@ -103,10 +125,21 @@ object Design {
     }
 
     fun createSectionLabel(text: String): JLabel {
-        return JLabel(text).apply {
-            font = Typography.titleMedium
-            foreground = Colors.onSurface
-            alignmentX = Component.LEFT_ALIGNMENT
+        return object : JLabel(text) {
+            init {
+                updateColors()
+                alignmentX = LEFT_ALIGNMENT
+            }
+
+            override fun updateUI() {
+                super.updateUI()
+                updateColors()
+            }
+
+            private fun updateColors() {
+                font = Typography.titleMedium
+                foreground = Colors.onSurface
+            }
         }
     }
 }
@@ -204,6 +237,11 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
         g2.fill(createRoundRect(thumbX, thumbY, THUMB_SIZE.toFloat(), THUMB_SIZE.toFloat(), THUMB_SIZE.toFloat()))
 
         g2.dispose()
+    }
+
+    override fun updateUI() {
+        super.updateUI()
+        repaint() // Repaint to use updated theme colors
     }
 
     private fun createRoundRect(

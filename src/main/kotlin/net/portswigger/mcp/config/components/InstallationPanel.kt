@@ -25,14 +25,23 @@ class InstallationPanel(
 
     init {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        updateColors()
+        alignmentX = LEFT_ALIGNMENT
+
+        buildPanel()
+    }
+
+    override fun updateUI() {
+        super.updateUI()
+        updateColors()
+    }
+
+    private fun updateColors() {
         background = Design.Colors.surface
         border = BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(Design.Colors.outlineVariant, 1),
             BorderFactory.createEmptyBorder(Design.Spacing.MD, Design.Spacing.MD, Design.Spacing.MD, Design.Spacing.MD)
         )
-        alignmentX = LEFT_ALIGNMENT
-
-        buildPanel()
     }
 
     private fun buildPanel() {

@@ -14,12 +14,21 @@ class ResponsiveColumnsPanel(private val leftPanel: JPanel, private val rightPan
     private val minWidthForLargePadding = 700
     private var lastLayout = Layout.SINGLE_COLUMN
     private var lastPaddingSize = PaddingSize.SMALL
+    private var isInitialized = false
 
     enum class Layout { SINGLE_COLUMN, TWO_COLUMNS }
     enum class PaddingSize { SMALL, LARGE }
 
     init {
+        isInitialized = true
         updateLayout()
+    }
+
+    override fun updateUI() {
+        super.updateUI()
+        if (isInitialized) {
+            updateLayout() // Reapply layout with updated theme colors
+        }
     }
 
     override fun doLayout() {
