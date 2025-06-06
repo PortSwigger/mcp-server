@@ -101,6 +101,14 @@ object Design {
     fun createToggleSwitch(initialState: Boolean = false, onToggle: (Boolean) -> Unit): ToggleSwitch {
         return ToggleSwitch(initialState, onToggle)
     }
+
+    fun createSectionLabel(text: String): JLabel {
+        return JLabel(text).apply {
+            font = Typography.titleMedium
+            foreground = Colors.onSurface
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+    }
 }
 
 class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) -> Unit) : JComponent() {

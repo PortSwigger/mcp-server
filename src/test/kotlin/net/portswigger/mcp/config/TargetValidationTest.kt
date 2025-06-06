@@ -1,48 +1,13 @@
 package net.portswigger.mcp.config
 
-import burp.api.montoya.persistence.PersistedObject
-import io.mockk.every
-import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.lang.reflect.Method
 
-class ConfigUiValidationTest {
-
-    private lateinit var persistedObject: PersistedObject
-    private lateinit var config: McpConfig
-    private lateinit var configUi: ConfigUi
-    private lateinit var isValidTargetMethod: Method
-
-    @BeforeEach
-    fun setup() {
-        val storage = mutableMapOf<String, Any>()
-
-        persistedObject = mockk<PersistedObject>().apply {
-            every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
-            every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
-            every { getInteger(any()) } answers { storage[firstArg()] as? Int ?: 0 }
-            every { setBoolean(any(), any()) } answers {
-                storage[firstArg()] = secondArg<Boolean>()
-            }
-            every { setString(any(), any()) } answers {
-                storage[firstArg()] = secondArg<String>()
-            }
-            every { setInteger(any(), any()) } answers {
-                storage[firstArg()] = secondArg<Int>()
-            }
-        }
-        config = McpConfig(persistedObject)
-        configUi = ConfigUi(config, emptyList())
-
-        isValidTargetMethod = ConfigUi::class.java.getDeclaredMethod("isValidTarget", String::class.java)
-        isValidTargetMethod.isAccessible = true
-    }
+class TargetValidationTest {
 
     private fun isValidTarget(target: String): Boolean {
-        return isValidTargetMethod.invoke(configUi, target) as Boolean
+        return TargetValidation.isValidTarget(target)
     }
 
     @Test

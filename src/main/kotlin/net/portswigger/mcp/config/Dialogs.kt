@@ -382,7 +382,6 @@ object Dialogs {
             contentPanel.add(messageArea)
             contentPanel.add(Box.createVerticalStrut(Design.Spacing.XL))
 
-            // Add button panel for single column layout - 2x2 grid
             val buttonPanel = JPanel().apply {
                 layout = GridLayout(2, 2, Design.Spacing.SM, Design.Spacing.SM)
                 background = Design.Colors.surface
