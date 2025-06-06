@@ -31,19 +31,43 @@ object Design {
     }
 
     object Typography {
-        val headlineMedium = Font("Inter", Font.BOLD, 28)
-        val titleMedium = Font("Inter", Font.BOLD, 16)
-        val bodyLarge = Font("Inter", Font.PLAIN, 16)
-        val bodyMedium = Font("Inter", Font.PLAIN, 14)
-        val labelLarge = Font("Inter", Font.BOLD, 14)
-        val labelMedium = Font("Inter", Font.BOLD, 12)
+        private val baseFont: Font get() = UIManager.getFont("Label.font") ?: Font("Inter", Font.PLAIN, 14)
+        private val baseSize: Int get() = baseFont.size
+
+        val headlineMedium: Font get() = baseFont.deriveFont(Font.BOLD, (baseSize * 2.0f))
+        val titleMedium: Font get() = baseFont.deriveFont(Font.BOLD, (baseSize * 1.14f))
+        val bodyLarge: Font get() = baseFont.deriveFont(Font.PLAIN, (baseSize * 1.14f))
+        val bodyMedium: Font get() = baseFont.deriveFont(Font.PLAIN, baseSize.toFloat())
+        val labelLarge: Font get() = baseFont.deriveFont(Font.BOLD, baseSize.toFloat())
+        val labelMedium: Font get() = baseFont.deriveFont(Font.BOLD, (baseSize * 0.86f))
     }
 
     object Spacing {
-        const val SM = 8
-        const val MD = 16
-        const val LG = 24
-        const val XL = 32
+        private val baseSize: Int get() = (UIManager.getFont("Label.font")?.size ?: 14)
+        private val scaleFactor: Float get() = baseSize / 14f
+
+        val SM: Int get() = (8 * scaleFactor).toInt().coerceAtLeast(4)
+        val MD: Int get() = (16 * scaleFactor).toInt().coerceAtLeast(8)
+        val LG: Int get() = (24 * scaleFactor).toInt().coerceAtLeast(12)
+        val XL: Int get() = (32 * scaleFactor).toInt().coerceAtLeast(16)
+    }
+
+    private fun calculateTextFitSize(button: JButton): Dimension {
+        val font = Typography.labelLarge
+        val metrics = button.getFontMetrics(font)
+        val textWidth = metrics.stringWidth(button.text)
+        val textHeight = metrics.height
+
+        val horizontalPadding = Spacing.LG * 2
+        val verticalPadding = Spacing.SM * 2 + 4
+
+        val minWidth = textWidth + horizontalPadding
+        val minHeight = textHeight + verticalPadding
+
+        return Dimension(
+            minWidth.coerceAtLeast(80),
+            minHeight.coerceAtLeast(40)
+        )
     }
 
     private fun applyButtonBaseStyle(button: JButton, customSize: Dimension?) {
@@ -51,24 +75,27 @@ object Design {
             font = Typography.labelLarge
             isFocusPainted = false
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            minimumSize = Dimension(80, 40)
-            preferredSize = customSize ?: preferredSize
+
+            val textFitSize = calculateTextFitSize(this)
+            minimumSize = textFitSize
+            preferredSize = customSize ?: textFitSize
         }
     }
 
     fun createFilledButton(text: String, customSize: Dimension? = null): JButton {
         return object : JButton(text) {
             init {
-                updateColors()
-                applyButtonBaseStyle(this, customSize ?: Dimension(160, 40))
+                updateColorsAndSizing()
+                applyButtonBaseStyle(this, customSize)
             }
 
             override fun updateUI() {
                 super.updateUI()
-                updateColors()
+                updateColorsAndSizing()
+                applyButtonBaseStyle(this, customSize)
             }
 
-            private fun updateColors() {
+            private fun updateColorsAndSizing() {
                 background = Colors.primary
                 foreground = Colors.onPrimary
                 border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)
@@ -79,16 +106,17 @@ object Design {
     fun createOutlinedButton(text: String, customSize: Dimension? = null): JButton {
         return object : JButton(text) {
             init {
-                updateColors()
-                applyButtonBaseStyle(this, customSize ?: Dimension(120, 40))
+                updateColorsAndSizing()
+                applyButtonBaseStyle(this, customSize)
             }
 
             override fun updateUI() {
                 super.updateUI()
-                updateColors()
+                updateColorsAndSizing()
+                applyButtonBaseStyle(this, customSize)
             }
 
-            private fun updateColors() {
+            private fun updateColorsAndSizing() {
                 background = Colors.surface
                 foreground = Colors.primary
                 border = BorderFactory.createCompoundBorder(
@@ -102,17 +130,18 @@ object Design {
     fun createTextButton(text: String, customSize: Dimension? = null): JButton {
         return object : JButton(text) {
             init {
-                updateColors()
+                updateColorsAndSizing()
                 isContentAreaFilled = false
-                applyButtonBaseStyle(this, customSize ?: Dimension(100, 40))
+                applyButtonBaseStyle(this, customSize)
             }
 
             override fun updateUI() {
                 super.updateUI()
-                updateColors()
+                updateColorsAndSizing()
+                applyButtonBaseStyle(this, customSize)
             }
 
-            private fun updateColors() {
+            private fun updateColorsAndSizing() {
                 background = Colors.transparent
                 foreground = Colors.primary
                 border = BorderFactory.createEmptyBorder(Spacing.SM + 2, Spacing.LG, Spacing.SM + 2, Spacing.LG)

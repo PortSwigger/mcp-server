@@ -9,7 +9,6 @@ import net.portswigger.mcp.config.Design
 import net.portswigger.mcp.config.Dialogs
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.providers.Provider
-import java.awt.Dimension
 import java.awt.FlowLayout
 import javax.swing.*
 import javax.swing.Box.createVerticalStrut
@@ -79,8 +78,6 @@ class InstallationPanel(
 
     private fun createProviderButton(provider: Provider): JButton {
         return Design.createFilledButton(provider.installButtonText).apply {
-            preferredSize = Dimension(260, 40)
-            minimumSize = Dimension(200, 40)
             addActionListener {
                 handleProviderInstall(provider)
             }

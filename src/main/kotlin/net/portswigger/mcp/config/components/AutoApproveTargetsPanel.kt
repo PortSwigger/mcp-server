@@ -182,9 +182,15 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
 
     private fun createScrollPane(targetsList: JList<String>): JScrollPane {
         return JScrollPane(targetsList).apply {
-            maximumSize = Dimension(Int.MAX_VALUE, 220)
-            preferredSize = Dimension(400, 220)
-            minimumSize = Dimension(250, 150)
+            val baseHeight = 220
+            val baseWidth = 400
+            val scaleFactor = Design.Spacing.MD / 16f
+            val responsiveHeight = (baseHeight * scaleFactor).toInt().coerceAtLeast(150)
+            val responsiveWidth = (baseWidth * scaleFactor).toInt().coerceAtLeast(250)
+
+            maximumSize = Dimension(Int.MAX_VALUE, responsiveHeight)
+            preferredSize = Dimension(responsiveWidth, responsiveHeight)
+            minimumSize = Dimension((responsiveWidth * 0.625f).toInt(), (responsiveHeight * 0.68f).toInt())
             border = BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Design.Colors.listBorder, 1),
                 BorderFactory.createEmptyBorder(1, 1, 1, 1)
@@ -214,8 +220,6 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
         }
 
         val addButton = Design.createFilledButton("Add").apply {
-            preferredSize = Dimension(100, 40)
-            minimumSize = Dimension(80, 40)
             addActionListener {
                 val input = Dialogs.showInputDialog(
                     this@AutoApproveTargetsPanel,
@@ -240,8 +244,6 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
         }
 
         val removeButton = Design.createOutlinedButton("Remove").apply {
-            preferredSize = Dimension(120, 40)
-            minimumSize = Dimension(80, 40)
             addActionListener {
                 val selectedIndex = targetsList.selectedIndex
                 if (selectedIndex >= 0) {
@@ -251,8 +253,6 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
         }
 
         val clearButton = Design.createOutlinedButton("Clear All").apply {
-            preferredSize = Dimension(120, 40)
-            minimumSize = Dimension(80, 40)
             addActionListener {
                 val result = Dialogs.showConfirmDialog(
                     this@AutoApproveTargetsPanel,
