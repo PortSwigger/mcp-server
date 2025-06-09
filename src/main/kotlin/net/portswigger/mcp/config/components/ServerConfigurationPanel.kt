@@ -48,7 +48,7 @@ class ServerConfigurationPanel(
         add(createVerticalStrut(Design.Spacing.MD))
 
         val configEditingToolingCheckBox = createStandardCheckBox(
-            "Enable tools that can edit your config", config.configEditingTooling
+            "Enable tools that can edit your config (WARNING: can execute code)", config.configEditingTooling
         ) { config.configEditingTooling = it }
         add(configEditingToolingCheckBox)
         add(createVerticalStrut(Design.Spacing.MD))
