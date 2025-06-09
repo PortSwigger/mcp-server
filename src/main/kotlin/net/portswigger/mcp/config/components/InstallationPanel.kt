@@ -89,7 +89,7 @@ class InstallationPanel(
 
         if (confirmationText != null) {
             val result = Dialogs.showConfirmDialog(
-                parentComponent, confirmationText, "Burp MCP Server", YES_NO_OPTION
+                parentComponent, confirmationText, YES_NO_OPTION
             )
 
             if (result != YES_OPTION) {
@@ -105,7 +105,7 @@ class InstallationPanel(
 
                     if (result != null) {
                         Dialogs.showMessageDialog(
-                            parentComponent, result, "Burp MCP Server", INFORMATION_MESSAGE
+                            parentComponent, result, INFORMATION_MESSAGE
                         )
                     }
                 }
@@ -114,7 +114,6 @@ class InstallationPanel(
                     Dialogs.showMessageDialog(
                         parentComponent,
                         "Failed to install for ${provider.name}: ${e.message ?: e.javaClass.simpleName}",
-                        "${provider.name} install",
                         ERROR_MESSAGE
                     )
                 }

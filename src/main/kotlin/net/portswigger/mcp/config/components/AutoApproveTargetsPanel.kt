@@ -4,6 +4,7 @@ import net.portswigger.mcp.config.Design
 import net.portswigger.mcp.config.Dialogs
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.config.TargetValidation
+import net.portswigger.mcp.security.findBurpFrame
 import java.awt.Component
 import java.awt.Cursor
 import java.awt.Dimension
@@ -192,8 +193,7 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
             preferredSize = Dimension(responsiveWidth, responsiveHeight)
             minimumSize = Dimension((responsiveWidth * 0.625f).toInt(), (responsiveHeight * 0.68f).toInt())
             border = BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Design.Colors.listBorder, 1),
-                BorderFactory.createEmptyBorder(1, 1, 1, 1)
+                BorderFactory.createLineBorder(Design.Colors.listBorder, 1), BorderFactory.createEmptyBorder(1, 1, 1, 1)
             )
             background = Design.Colors.listBackground
             viewport.background = Design.Colors.listBackground
@@ -222,9 +222,8 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
         val addButton = Design.createFilledButton("Add").apply {
             addActionListener {
                 val input = Dialogs.showInputDialog(
-                    this@AutoApproveTargetsPanel,
-                    "Enter target (hostname or hostname:port):\nExamples: example.com, localhost:8080, *.api.com",
-                    "Add HTTP Target"
+                    findBurpFrame(),
+                    "Enter target (hostname or hostname:port):\nExamples: example.com, localhost:8080, *.api.com"
                 )
 
                 if (!input.isNullOrBlank()) {
@@ -233,9 +232,8 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
                         addTarget(trimmed)
                     } else {
                         Dialogs.showMessageDialog(
-                            this@AutoApproveTargetsPanel,
+                            findBurpFrame(),
                             "Invalid target format. Use hostname, IP address, hostname:port, or wildcard (*.domain)",
-                            "Invalid Target",
                             ERROR_MESSAGE
                         )
                     }
@@ -255,10 +253,7 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
         val clearButton = Design.createOutlinedButton("Clear All").apply {
             addActionListener {
                 val result = Dialogs.showConfirmDialog(
-                    this@AutoApproveTargetsPanel,
-                    "Remove all auto-approved targets?",
-                    "Clear All Targets",
-                    YES_NO_OPTION
+                    findBurpFrame(), "Remove all auto-approved targets?", YES_NO_OPTION
                 )
 
                 if (result == YES_OPTION) {

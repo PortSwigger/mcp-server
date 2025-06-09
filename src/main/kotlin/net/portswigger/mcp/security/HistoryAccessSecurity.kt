@@ -39,7 +39,7 @@ class SwingHistoryAccessApprovalHandler : HistoryAccessApprovalHandler {
                 val burpFrame = findBurpFrame()
 
                 val result = Dialogs.showOptionDialog(
-                    burpFrame, message, "MCP History Access Security", options
+                    burpFrame, message, options
                 )
 
                 when (result) {

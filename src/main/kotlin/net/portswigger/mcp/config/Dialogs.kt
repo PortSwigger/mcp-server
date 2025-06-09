@@ -1,5 +1,8 @@
 package net.portswigger.mcp.config
 
+import burp.api.montoya.MontoyaApi
+import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.ui.editor.EditorOptions
 import java.awt.*
 import java.awt.event.ActionEvent
 import java.awt.event.KeyEvent
@@ -34,11 +37,12 @@ object Dialogs {
         return result.toString()
     }
 
-    private fun createDialog(parent: Component?, title: String): JDialog {
+    private fun createDialog(parent: Component?): JDialog {
         val parentWindow = SwingUtilities.getWindowAncestor(parent)
-        return JDialog(parentWindow, title, Dialog.ModalityType.APPLICATION_MODAL).apply {
+        return JDialog(parentWindow, "", Dialog.ModalityType.APPLICATION_MODAL).apply {
             background = Design.Colors.surface
             defaultCloseOperation = JDialog.DISPOSE_ON_CLOSE
+            isResizable = true
 
             val escapeAction = object : AbstractAction() {
                 override fun actionPerformed(e: ActionEvent?) {
@@ -54,9 +58,9 @@ object Dialogs {
     }
 
     fun showMessageDialog(
-        parent: Component?, message: String, title: String, messageType: Int
+        parent: Component?, message: String, messageType: Int
     ) {
-        val dialog = createDialog(parent, title)
+        val dialog = createDialog(parent)
 
         val iconLabel = when (messageType) {
             JOptionPane.ERROR_MESSAGE -> JLabel("⚠").apply {
@@ -121,9 +125,9 @@ object Dialogs {
     }
 
     fun showConfirmDialog(
-        parent: Component?, message: String, title: String, optionType: Int
+        parent: Component?, message: String, optionType: Int
     ): Int {
-        val dialog = createDialog(parent, title)
+        val dialog = createDialog(parent)
         var result = JOptionPane.CANCEL_OPTION
 
         val messageLabel = JLabel(message).apply {
@@ -194,9 +198,9 @@ object Dialogs {
     }
 
     fun showInputDialog(
-        parent: Component?, message: String, title: String
+        parent: Component?, message: String
     ): String? {
-        val dialog = createDialog(parent, title)
+        val dialog = createDialog(parent)
         var result: String? = null
 
         val messageLabel = JLabel(message).apply {
@@ -213,6 +217,7 @@ object Dialogs {
             )
             background = Design.Colors.listBackground
             foreground = Design.Colors.onSurface
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
         }
 
         val contentPanel = JPanel().apply {
@@ -234,7 +239,7 @@ object Dialogs {
             alignmentX = Component.LEFT_ALIGNMENT
         }
 
-        val cancelButton = Design.createTextButton("Cancel").apply {
+        val cancelButton = Design.createOutlinedButton("Cancel").apply {
             addActionListener {
                 result = null
                 dialog.dispose()
@@ -278,9 +283,13 @@ object Dialogs {
     }
 
     fun showOptionDialog(
-        parent: Component?, message: String, title: String, options: Array<String>, requestContent: String? = null
+        parent: Component?,
+        message: String,
+        options: Array<String>,
+        requestContent: String? = null,
+        api: MontoyaApi? = null
     ): Int {
-        val dialog = createDialog(parent, title)
+        val dialog = createDialog(parent)
         var result = -1
 
         val messageArea = JTextArea(message).apply {
@@ -298,49 +307,68 @@ object Dialogs {
 
         val contentPanel = JPanel().apply {
             background = Design.Colors.surface
-            border = EmptyBorder(Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.XL)
         }
 
         if (!requestContent.isNullOrBlank()) {
             contentPanel.layout = BorderLayout()
 
             val leftPanel = JPanel().apply {
-                layout = BoxLayout(this, BoxLayout.Y_AXIS)
+                layout = BorderLayout()
                 background = Design.Colors.surface
-                preferredSize = Dimension(400, 250)
+                minimumSize = Dimension(400, 300)
             }
 
-            val requestLabel = JLabel("HTTP Request:").apply {
-                font = Design.Typography.bodyMedium
-                foreground = Design.Colors.onSurface
-                alignmentX = Component.LEFT_ALIGNMENT
+            val requestComponent = if (api != null) {
+                try {
+                    val httpRequestEditor = api.userInterface().createHttpRequestEditor(EditorOptions.READ_ONLY)
+                    httpRequestEditor.request = HttpRequest.httpRequest(requestContent)
+                    httpRequestEditor.uiComponent().apply {
+                        minimumSize = Dimension(400, 200)
+                    }
+                } catch (_: Exception) {
+                    JTextArea(requestContent).apply {
+                        font = Font("Monaco", Font.PLAIN, 11)
+                        foreground = Design.Colors.onSurface
+                        background = Design.Colors.listBackground
+                        isEditable = false
+                        lineWrap = false
+                        tabSize = 4
+                    }.let { textArea ->
+                        JScrollPane(textArea).apply {
+                            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+                            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+                            border = BorderFactory.createLineBorder(Design.Colors.outline, 1)
+                            minimumSize = Dimension(400, 200)
+                        }
+                    }
+                }
+            } else {
+                JTextArea(requestContent).apply {
+                    font = Font("Monaco", Font.PLAIN, 11)
+                    foreground = Design.Colors.onSurface
+                    background = Design.Colors.listBackground
+                    isEditable = false
+                    lineWrap = false
+                    tabSize = 4
+                }.let { textArea ->
+                    JScrollPane(textArea).apply {
+                        verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+                        horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+                        border = BorderFactory.createLineBorder(Design.Colors.outline, 1)
+                        minimumSize = Dimension(400, 200)
+                    }
+                }
             }
-            leftPanel.add(requestLabel)
-            leftPanel.add(Box.createVerticalStrut(Design.Spacing.SM))
 
-            val requestTextArea = JTextArea(requestContent).apply {
-                font = Font("Monaco", Font.PLAIN, 11)
-                foreground = Design.Colors.onSurface
-                background = Design.Colors.listBackground
-                isEditable = false
-                lineWrap = false
-                tabSize = 4
-            }
-
-            val scrollPane = JScrollPane(requestTextArea).apply {
-                preferredSize = Dimension(400, 200)
-                verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-                horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
-                border = BorderFactory.createLineBorder(Design.Colors.outline, 1)
-            }
-
-            leftPanel.add(scrollPane)
+            leftPanel.add(requestComponent, BorderLayout.CENTER)
 
             val rightPanel = JPanel().apply {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 background = Design.Colors.surface
+                minimumSize = Dimension(400, 300)
+                maximumSize = Dimension(400, Int.MAX_VALUE)
                 preferredSize = Dimension(400, 400)
-                border = EmptyBorder(0, Design.Spacing.LG, 0, 0)
+                border = EmptyBorder(Design.Spacing.XL, Design.Spacing.LG, Design.Spacing.XL, Design.Spacing.XL)
             }
 
             messageArea.alignmentX = Component.CENTER_ALIGNMENT
@@ -358,8 +386,13 @@ object Dialogs {
             options.forEachIndexed { index, option ->
                 val button = when (index) {
                     0 -> Design.createFilledButton(option)
-                    options.size - 1 -> Design.createOutlinedButton(option)
-                    else -> Design.createTextButton(option)
+                    1, 2 -> Design.createOutlinedButton(option)
+                    3 -> Design.createOutlinedButton(option).apply {
+                        foreground = Design.Colors.error
+                        border = BorderFactory.createLineBorder(Design.Colors.error, 1)
+                    }
+
+                    else -> Design.createOutlinedButton(option)
                 }.apply {
                     preferredSize = Dimension(190, 32)
                     font = font.deriveFont(10f)
@@ -373,10 +406,12 @@ object Dialogs {
 
             rightPanel.add(buttonPanel)
 
-            contentPanel.add(leftPanel, BorderLayout.WEST)
+            contentPanel.add(leftPanel, BorderLayout.CENTER)
             contentPanel.add(rightPanel, BorderLayout.EAST)
         } else {
             contentPanel.layout = BoxLayout(contentPanel, BoxLayout.Y_AXIS)
+            contentPanel.border =
+                EmptyBorder(Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.XL, Design.Spacing.XL)
 
             messageArea.alignmentX = Component.CENTER_ALIGNMENT
             contentPanel.add(messageArea)
@@ -392,7 +427,7 @@ object Dialogs {
             options.forEachIndexed { index, option ->
                 val button = when (index) {
                     0 -> Design.createFilledButton(option)
-                    options.size - 1 -> Design.createOutlinedButton(option)
+                    1, 2 -> Design.createOutlinedButton(option)
                     else -> Design.createTextButton(option)
                 }.apply {
                     preferredSize = Dimension(180, 32)

@@ -22,10 +22,7 @@ import java.util.regex.Pattern
 import javax.swing.JTextArea
 
 private suspend fun checkHistoryPermissionOrDeny(
-    accessType: HistoryAccessType,
-    config: McpConfig,
-    api: MontoyaApi,
-    logMessage: String
+    accessType: HistoryAccessType, config: McpConfig, api: MontoyaApi, logMessage: String
 ): Boolean {
     val allowed = HistoryAccessSecurity.checkHistoryAccessPermission(accessType, config)
     if (!allowed) {
@@ -48,7 +45,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {
-            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content)
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
         }
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
@@ -79,9 +76,9 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                 append(requestBody)
             }
         }
-        
+
         val allowed = runBlocking {
-            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, http2RequestDisplay)
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, http2RequestDisplay, api)
         }
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
@@ -200,8 +197,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        api.proxy().history().asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
@@ -281,8 +277,7 @@ fun getActiveEditor(api: MontoyaApi): JTextArea? {
     val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
     val permanentFocusOwner = focusManager.permanentFocusOwner
 
-    val isInBurpWindow = generateSequence(permanentFocusOwner) { it.parent }
-        .any { it == frame }
+    val isInBurpWindow = generateSequence(permanentFocusOwner) { it.parent }.any { it == frame }
 
     return if (isInBurpWindow && permanentFocusOwner is JTextArea) {
         permanentFocusOwner

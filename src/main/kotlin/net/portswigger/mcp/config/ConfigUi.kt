@@ -131,7 +131,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                     }
 
                     Dialogs.showMessageDialog(
-                        panel, "Failed to start Burp MCP Server: $friendlyMessage", "Error", ERROR_MESSAGE
+                        panel, "Failed to start Burp MCP Server: $friendlyMessage", ERROR_MESSAGE
                     )
                 }
             }

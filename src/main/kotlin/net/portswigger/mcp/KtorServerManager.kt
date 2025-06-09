@@ -35,8 +35,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                 server = null
 
                 val mcpServer = Server(
-                    serverInfo = Implementation("burp-suite", "1.0.0"),
-                    options = ServerOptions(
+                    serverInfo = Implementation("burp-suite", "1.0.0"), options = ServerOptions(
                         capabilities = ServerCapabilities(
                             tools = ServerCapabilities.Tools(listChanged = false)
                         )
@@ -47,16 +46,16 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                     install(CORS) {
                         allowHost("localhost:${config.port}")
                         allowHost("127.0.0.1:${config.port}")
-                        
+
                         allowMethod(HttpMethod.Get)
                         allowMethod(HttpMethod.Post)
                         allowMethod(HttpMethod.Options)
-                        
+
                         allowHeader(HttpHeaders.ContentType)
                         allowHeader(HttpHeaders.Accept)
                         allowHeader(HttpHeaders.CacheControl)
                         allowHeader("Last-Event-ID")
-                        
+
                         allowCredentials = false
                         allowNonSimpleContentTypes = true
                         maxAgeInSeconds = 3600
@@ -67,7 +66,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                         val host = call.request.header("Host")
                         val referer = call.request.header("Referer")
                         val userAgent = call.request.header("User-Agent")
-                        
+
                         if (origin != null) {
                             if (!isValidOrigin(origin)) {
                                 api.logging().logToOutput("Blocked DNS rebinding attack from origin: $origin")
@@ -79,23 +78,22 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                             call.respond(HttpStatusCode.Forbidden)
                             return@intercept
                         }
-                        
+
                         if (host != null && !isValidHost(host, config.port)) {
                             api.logging().logToOutput("Blocked DNS rebinding attack from host: $host")
                             call.respond(HttpStatusCode.Forbidden)
                             return@intercept
                         }
-                        
+
                         if (referer != null && !isValidReferer(referer)) {
                             api.logging().logToOutput("Blocked suspicious request from referer: $referer")
                             call.respond(HttpStatusCode.Forbidden)
                             return@intercept
                         }
-                        
+
                         call.response.header("X-Frame-Options", "DENY")
                         call.response.header("X-Content-Type-Options", "nosniff")
                         call.response.header("Referrer-Policy", "same-origin")
-                        call.response.header("X-XSS-Protection", "1; mode=block")
                         call.response.header("Content-Security-Policy", "default-src 'none'")
                     }
 
@@ -154,48 +152,47 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
             return false
         }
     }
-    
+
     private fun isBrowserRequest(userAgent: String?): Boolean {
         if (userAgent == null) return false
-        
+
         val userAgentLower = userAgent.lowercase()
         val browserIndicators = listOf(
-            "mozilla/", "chrome/", "safari/", "webkit/", "gecko/", 
-            "firefox/", "edge/", "opera/", "browser"
+            "mozilla/", "chrome/", "safari/", "webkit/", "gecko/", "firefox/", "edge/", "opera/", "browser"
         )
-        
+
         return browserIndicators.any { userAgentLower.contains(it) }
     }
-    
+
     private fun isValidHost(host: String, expectedPort: Int): Boolean {
         try {
             val parts = host.split(":")
             val hostname = parts[0].lowercase()
             val port = if (parts.size > 1) parts[1].toIntOrNull() else null
-            
+
             val allowedHosts = setOf("localhost", "127.0.0.1")
             if (hostname !in allowedHosts) {
                 return false
             }
-            
+
             if (port != null && port != expectedPort) {
                 return false
             }
-            
+
             return true
         } catch (_: Exception) {
             return false
         }
     }
-    
+
     private fun isValidReferer(referer: String): Boolean {
         try {
             val url = java.net.URI(referer).toURL()
             val hostname = url.host.lowercase()
-            
+
             val allowedHosts = setOf("localhost", "127.0.0.1")
             return hostname in allowedHosts
-            
+
         } catch (_: Exception) {
             return false
         }

@@ -1,5 +1,6 @@
 package net.portswigger.mcp.security
 
+import burp.api.montoya.MontoyaApi
 import net.portswigger.mcp.config.Dialogs
 import net.portswigger.mcp.config.McpConfig
 import javax.swing.SwingUtilities
@@ -7,12 +8,14 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 interface UserApprovalHandler {
-    suspend fun requestApproval(hostname: String, port: Int, config: McpConfig, requestContent: String? = null): Boolean
+    suspend fun requestApproval(
+        hostname: String, port: Int, config: McpConfig, requestContent: String? = null, api: MontoyaApi? = null
+    ): Boolean
 }
 
 class SwingUserApprovalHandler : UserApprovalHandler {
     override suspend fun requestApproval(
-        hostname: String, port: Int, config: McpConfig, requestContent: String?
+        hostname: String, port: Int, config: McpConfig, requestContent: String?, api: MontoyaApi?
     ): Boolean {
         return suspendCoroutine { continuation ->
             SwingUtilities.invokeLater {
@@ -30,7 +33,7 @@ class SwingUserApprovalHandler : UserApprovalHandler {
                 val burpFrame = findBurpFrame()
 
                 val result = Dialogs.showOptionDialog(
-                    burpFrame, message, "MCP HTTP Request Security", options, requestContent
+                    burpFrame, message, options, requestContent, api
                 )
 
                 when (result) {
@@ -102,7 +105,7 @@ object HttpRequestSecurity {
     }
 
     suspend fun checkHttpRequestPermission(
-        hostname: String, port: Int, config: McpConfig, requestContent: String? = null
+        hostname: String, port: Int, config: McpConfig, requestContent: String? = null, api: MontoyaApi? = null
     ): Boolean {
         if (!config.requireHttpRequestApproval) {
             return true
@@ -112,6 +115,6 @@ object HttpRequestSecurity {
             return true
         }
 
-        return approvalHandler.requestApproval(hostname, port, config, requestContent)
+        return approvalHandler.requestApproval(hostname, port, config, requestContent, api)
     }
 }
