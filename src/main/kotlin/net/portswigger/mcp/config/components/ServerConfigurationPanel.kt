@@ -47,8 +47,10 @@ class ServerConfigurationPanel(
         add(enabledPanel)
         add(createVerticalStrut(Design.Spacing.MD))
 
-        val configEditingToolingCheckBox = createStandardCheckBox(
-            "Enable tools that can edit your config (WARNING: can execute code)", config.configEditingTooling
+        val configEditingToolingCheckBox = createCheckBoxWithSubtitle(
+            "Enable tools that can edit your config",
+            "WARNING: Can execute code",
+            config.configEditingTooling
         ) { config.configEditingTooling = it }
         add(configEditingToolingCheckBox)
         add(createVerticalStrut(Design.Spacing.MD))
@@ -143,6 +145,40 @@ class ServerConfigurationPanel(
             addItemListener { event ->
                 onChange(event.stateChange == ItemEvent.SELECTED)
             }
+        }
+    }
+
+    private fun createCheckBoxWithSubtitle(
+        mainText: String, subtitleText: String, initialValue: Boolean, onChange: (Boolean) -> Unit
+    ): JPanel {
+        val checkBox = JCheckBox(mainText).apply {
+            alignmentX = LEFT_ALIGNMENT
+            isSelected = initialValue
+            font = Design.Typography.bodyLarge
+            foreground = Design.Colors.onSurface
+            addItemListener { event ->
+                onChange(event.stateChange == ItemEvent.SELECTED)
+            }
+        }
+
+        val subtitleLabel = JLabel(subtitleText).apply {
+            font = Design.Typography.labelMedium
+            foreground = Design.Colors.onSurfaceVariant
+        }
+
+        val subtitlePanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            add(createHorizontalStrut(20))
+            add(subtitleLabel)
+        }
+
+        return JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            alignmentX = LEFT_ALIGNMENT
+            isOpaque = false
+            add(checkBox)
+            add(subtitlePanel)
         }
     }
 

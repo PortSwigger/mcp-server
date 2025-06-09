@@ -64,21 +64,21 @@ object Dialogs {
 
         val iconLabel = when (messageType) {
             JOptionPane.ERROR_MESSAGE -> JLabel("⚠").apply {
-                font = Font("SF Pro Display", Font.PLAIN, 24)
+                font = Design.Typography.headlineMedium
                 foreground = Design.Colors.error
                 horizontalAlignment = SwingConstants.CENTER
                 preferredSize = Dimension(40, 40)
             }
 
             JOptionPane.WARNING_MESSAGE -> JLabel("⚠").apply {
-                font = Font("SF Pro Display", Font.PLAIN, 24)
+                font = Design.Typography.headlineMedium
                 foreground = Design.Colors.warning
                 horizontalAlignment = SwingConstants.CENTER
                 preferredSize = Dimension(40, 40)
             }
 
             JOptionPane.INFORMATION_MESSAGE -> JLabel("ⓘ").apply {
-                font = Font("SF Pro Display", Font.PLAIN, 24)
+                font = Design.Typography.headlineMedium
                 foreground = Design.Colors.primary
                 horizontalAlignment = SwingConstants.CENTER
                 preferredSize = Dimension(40, 40)
@@ -327,7 +327,7 @@ object Dialogs {
                     }
                 } catch (_: Exception) {
                     JTextArea(requestContent).apply {
-                        font = Font("Monaco", Font.PLAIN, 11)
+                        font = Design.Typography.bodyMedium
                         foreground = Design.Colors.onSurface
                         background = Design.Colors.listBackground
                         isEditable = false
@@ -344,7 +344,7 @@ object Dialogs {
                 }
             } else {
                 JTextArea(requestContent).apply {
-                    font = Font("Monaco", Font.PLAIN, 11)
+                    font = Design.Typography.bodyMedium
                     foreground = Design.Colors.onSurface
                     background = Design.Colors.listBackground
                     isEditable = false
