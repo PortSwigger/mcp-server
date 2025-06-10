@@ -45,6 +45,8 @@ class ExtensionBase : BurpExtension {
 
         api.extension().registerUnloadingHandler {
             serverManager.shutdown()
+            configUi.cleanup()
+            config.cleanup()
         }
 
         if (config.enabled) {

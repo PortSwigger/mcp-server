@@ -20,6 +20,8 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val panel = JPanel(BorderLayout())
     val component: JComponent get() = panel
 
+    private val listenerHandles = mutableListOf<ListenerHandle>()
+
     private val enabledToggle: ToggleSwitch = Design.createToggleSwitch(false) { enabled ->
         if (suppressToggleEvents) return@createToggleSwitch
 
@@ -84,7 +86,17 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                 serverConfigurationPanel.updateHistoryAccessCheckboxes()
             }
         }
-        config.addHistoryAccessChangeListener(historyAccessRefreshListener)
+        val handle = config.addHistoryAccessChangeListener(historyAccessRefreshListener)
+        listenerHandles.add(handle)
+    }
+
+    fun cleanup() {
+        listenerHandles.forEach { it.remove() }
+        listenerHandles.clear()
+
+        if (::autoApproveTargetsPanel.isInitialized) {
+            autoApproveTargetsPanel.cleanup()
+        }
     }
 
     fun onEnabledToggled(listener: (Boolean) -> Unit) {

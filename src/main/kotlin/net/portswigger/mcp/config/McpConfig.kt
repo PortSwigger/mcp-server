@@ -2,6 +2,8 @@ package net.portswigger.mcp.config
 
 import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
+import java.lang.ref.WeakReference
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
@@ -35,8 +37,8 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         }
 
     private var _autoApproveTargets by storage.stringList("")
-    private val targetsChangeListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
-    private val historyAccessChangeListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+    private val targetsChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
+    private val historyAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
 
     var autoApproveTargets: String
         get() = _autoApproveTargets
@@ -79,34 +81,58 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         autoApproveTargets = ""
     }
 
-    fun addTargetsChangeListener(listener: () -> Unit) {
-        targetsChangeListeners.add(listener)
+    fun addTargetsChangeListener(listener: () -> Unit): ListenerHandle {
+        val registration = ListenerRegistration(listener)
+        targetsChangeListeners.add(registration)
+        return ListenerHandle { removeTargetsChangeListener(registration) }
+    }
+
+    private fun removeTargetsChangeListener(registration: ListenerRegistration) {
+        targetsChangeListeners.remove(registration)
     }
 
     private fun notifyTargetsChanged() {
-        val listeners = targetsChangeListeners.toList()
-        listeners.forEach {
+        cleanupStaleListeners(targetsChangeListeners)
+        val listeners = targetsChangeListeners.mapNotNull { it.listener.get() }
+        listeners.forEach { listener ->
             try {
-                it()
+                listener()
             } catch (e: Exception) {
                 logging.logToError("Targets change listener failed: ${e.message}")
             }
         }
     }
 
-    fun addHistoryAccessChangeListener(listener: () -> Unit) {
-        historyAccessChangeListeners.add(listener)
+    fun addHistoryAccessChangeListener(listener: () -> Unit): ListenerHandle {
+        val registration = ListenerRegistration(listener)
+        historyAccessChangeListeners.add(registration)
+        return ListenerHandle { removeHistoryAccessChangeListener(registration) }
+    }
+
+    private fun removeHistoryAccessChangeListener(registration: ListenerRegistration) {
+        historyAccessChangeListeners.remove(registration)
     }
 
     private fun notifyHistoryAccessChanged() {
-        val listeners = historyAccessChangeListeners.toList()
-        listeners.forEach {
+        cleanupStaleListeners(historyAccessChangeListeners)
+        val listeners = historyAccessChangeListeners.mapNotNull { it.listener.get() }
+        listeners.forEach { listener ->
             try {
-                it()
+                listener()
             } catch (e: Exception) {
                 logging.logToError("History access change listener failed: ${e.message}")
             }
         }
+    }
+
+    private fun cleanupStaleListeners(listenerList: CopyOnWriteArrayList<ListenerRegistration>) {
+        val staleListeners = listenerList.filter { it.listener.get() == null }
+        listenerList.removeAll(staleListeners)
+    }
+
+    fun cleanup() {
+        targetsChangeListeners.clear()
+        historyAccessChangeListeners.clear()
     }
 }
 
@@ -127,4 +153,12 @@ class PersistedDelegate<T>(
 ) : ReadWriteProperty<Any, T> {
     override fun getValue(thisRef: Any, property: KProperty<*>) = getter(property.name)
     override fun setValue(thisRef: Any, property: KProperty<*>, value: T) = setter(property.name, value)
+}
+
+class ListenerRegistration(listener: () -> Unit) {
+    val listener: WeakReference<() -> Unit> = WeakReference(listener)
+}
+
+fun interface ListenerHandle {
+    fun remove()
 }

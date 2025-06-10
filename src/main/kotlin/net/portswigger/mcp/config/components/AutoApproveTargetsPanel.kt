@@ -1,9 +1,6 @@
 package net.portswigger.mcp.config.components
 
-import net.portswigger.mcp.config.Design
-import net.portswigger.mcp.config.Dialogs
-import net.portswigger.mcp.config.McpConfig
-import net.portswigger.mcp.config.TargetValidation
+import net.portswigger.mcp.config.*
 import net.portswigger.mcp.security.findBurpFrame
 import java.awt.Component
 import java.awt.Cursor
@@ -14,6 +11,8 @@ import javax.swing.*
 import javax.swing.JOptionPane.*
 
 class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
+
+    private var listenerHandle: ListenerHandle? = null
 
     init {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -64,7 +63,7 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
                 updateTargetsList(listModel)
             }
         }
-        config.addTargetsChangeListener(refreshListener)
+        listenerHandle = config.addTargetsChangeListener(refreshListener)
 
         val scrollPane = createScrollPane(targetsList)
         val tableContainer = createTableContainer(scrollPane)
@@ -290,6 +289,11 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
 
     private fun clearAllTargets() {
         config.clearAutoApproveTargets()
+    }
+
+    fun cleanup() {
+        listenerHandle?.remove()
+        listenerHandle = null
     }
 
 }
