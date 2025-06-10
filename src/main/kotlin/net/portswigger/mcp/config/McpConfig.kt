@@ -1,10 +1,11 @@
 package net.portswigger.mcp.config
 
+import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
-class McpConfig(storage: PersistedObject) {
+class McpConfig(storage: PersistedObject, private val logging: Logging) {
 
     var enabled by storage.boolean(true)
     var configEditingTooling by storage.boolean(false)
@@ -88,7 +89,7 @@ class McpConfig(storage: PersistedObject) {
             try {
                 it()
             } catch (e: Exception) {
-                println("Warning: Targets change listener failed: ${e.message}")
+                logging.logToError("Targets change listener failed: ${e.message}")
             }
         }
     }
@@ -103,7 +104,7 @@ class McpConfig(storage: PersistedObject) {
             try {
                 it()
             } catch (e: Exception) {
-                println("Warning: History access change listener failed: ${e.message}")
+                logging.logToError("History access change listener failed: ${e.message}")
             }
         }
     }

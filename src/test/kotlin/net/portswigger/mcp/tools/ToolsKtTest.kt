@@ -8,6 +8,7 @@ import burp.api.montoya.http.Http
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import burp.api.montoya.proxy.Proxy
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
@@ -62,7 +63,12 @@ class ToolsKtTest {
             every { setString(any(), any()) } returns Unit
             every { setInteger(any(), any()) } returns Unit
         }
-        config = McpConfig(persistedObject)
+        val mockLogging = mockk<Logging>().apply {
+            every { logToError(any<String>()) } returns Unit
+            every { logToOutput(any<String>()) } returns Unit
+        }
+
+        config = McpConfig(persistedObject, mockLogging)
         
         mockkStatic(HttpHeader::class)
         mockkStatic(burp.api.montoya.http.HttpService::class)

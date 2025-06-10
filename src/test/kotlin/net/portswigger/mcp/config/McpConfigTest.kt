@@ -1,5 +1,6 @@
 package net.portswigger.mcp.config
 
+import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import io.mockk.every
 import io.mockk.mockk
@@ -12,6 +13,7 @@ class McpConfigTest {
 
     private lateinit var persistedObject: PersistedObject
     private lateinit var config: McpConfig
+    private lateinit var mockLogging: Logging
 
     @BeforeEach
     fun setup() {
@@ -38,7 +40,12 @@ class McpConfigTest {
                 storage[firstArg()] = secondArg<Int>()
             }
         }
-        config = McpConfig(persistedObject)
+
+        mockLogging = mockk<Logging>().apply {
+            every { logToError(any<String>()) } returns Unit
+        }
+
+        config = McpConfig(persistedObject, mockLogging)
     }
 
     @Test
@@ -139,7 +146,7 @@ class McpConfigTest {
                 storage[firstArg()] = secondArg<Int>()
             }
         }
-        config = McpConfig(persistedObject)
+        config = McpConfig(persistedObject, mockLogging)
 
         assertEquals(
             listOf("example.com", "test.org", "*.api.com"), config.getAutoApproveTargetsList()
@@ -163,7 +170,7 @@ class McpConfigTest {
                 storage[firstArg()] = secondArg<Int>()
             }
         }
-        config = McpConfig(persistedObject)
+        config = McpConfig(persistedObject, mockLogging)
 
         assertEquals(
             listOf("example.com", "test.org"), config.getAutoApproveTargetsList()

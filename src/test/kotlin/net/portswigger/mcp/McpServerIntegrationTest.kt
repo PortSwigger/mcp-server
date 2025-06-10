@@ -1,6 +1,7 @@
 package net.portswigger.mcp
 
 import burp.api.montoya.MontoyaApi
+import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import io.mockk.every
 import io.mockk.mockk
@@ -31,12 +32,16 @@ class McpServerIntegrationTest {
         every { persistedObject.setInteger(any(), any()) } returns Unit
     }
 
-    private val config = McpConfig(persistedObject)
+    private val mockLogging = mockk<Logging>().apply {
+        every { logToError(any<String>()) } returns Unit
+        every { logToOutput(any<String>()) } returns Unit
+    }
+
+    private val config = McpConfig(persistedObject, mockLogging)
 
     @BeforeEach
     fun setup() {
         serverManager.start(config) { state ->
-            println("Server state changed: $state")
             if (state is ServerState.Running) {
                 serverStarted = true
             }

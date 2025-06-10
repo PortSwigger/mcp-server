@@ -1,5 +1,6 @@
 package net.portswigger.mcp.security
 
+import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import io.mockk.coEvery
 import io.mockk.every
@@ -18,6 +19,7 @@ class HttpRequestSecurityTest {
     private lateinit var config: McpConfig
     private lateinit var mockApprovalHandler: UserApprovalHandler
     private lateinit var originalApprovalHandler: UserApprovalHandler
+    private lateinit var mockLogging: Logging
 
     @BeforeEach
     fun setup() {
@@ -48,7 +50,12 @@ class HttpRequestSecurityTest {
                 storage[firstArg()] = secondArg<Int>()
             }
         }
-        config = McpConfig(persistedObject)
+
+        mockLogging = mockk<Logging>().apply {
+            every { logToError(any<String>()) } returns Unit
+        }
+
+        config = McpConfig(persistedObject, mockLogging)
     }
 
     @AfterEach
@@ -176,7 +183,7 @@ class HttpRequestSecurityTest {
                 storage[firstArg()] = secondArg<Int>()
             }
         }
-        config = McpConfig(persistedObject)
+        config = McpConfig(persistedObject, mockLogging)
 
         coEvery { mockApprovalHandler.requestApproval("empty.com", 80, config, any()) } returns false
 
