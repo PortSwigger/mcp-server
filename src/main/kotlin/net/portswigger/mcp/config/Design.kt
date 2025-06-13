@@ -182,10 +182,27 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
         private const val PADDING = 2
         private const val ANIMATION_DURATION = 150
         private const val TIMER_DELAY = 16
+        private const val SPARKLE_DURATION = 800
+        private const val SPARKLE_COUNT = 8
     }
 
     private var animationProgress = if (isOn) 1.0f else 0.0f
     private var animationTimer: Timer? = null
+    private var sparkles = mutableListOf<Sparkle>()
+    private var sparkleTimer: Timer? = null
+
+    private data class Sparkle(
+        var x: Float,
+        var y: Float,
+        var size: Float,
+        var opacity: Float,
+        var life: Float,
+        val maxLife: Float,
+        val velocityX: Float,
+        val velocityY: Float,
+        val rotation: Float,
+        val rotationSpeed: Float
+    )
 
     init {
         preferredSize = Dimension(TRACK_WIDTH, TRACK_HEIGHT)
@@ -207,6 +224,9 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
                 animationProgress = if (isOn) 1.0f else 0.0f
                 repaint()
             }
+            if (isOn) {
+                triggerSparkles()
+            }
         }
     }
 
@@ -214,6 +234,9 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
         isOn = !isOn
         onToggle(isOn)
         animateToState()
+        if (isOn) {
+            triggerSparkles()
+        }
     }
 
     private fun animateToState() {
@@ -237,6 +260,66 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
             repaint()
         }
         animationTimer?.start()
+    }
+
+    private fun triggerSparkles() {
+        sparkles.clear()
+        sparkleTimer?.stop()
+
+        val centerX = TRACK_WIDTH / 2f
+        val centerY = TRACK_HEIGHT / 2f
+
+        for (i in 0 until SPARKLE_COUNT) {
+            val angle = (i * 360f / SPARKLE_COUNT) * Math.PI / 180f
+            val distance = 15f + Math.random().toFloat() * 10f
+            val sparkleX = centerX + Math.cos(angle).toFloat() * distance
+            val sparkleY = centerY + Math.sin(angle).toFloat() * distance
+
+            sparkles.add(
+                Sparkle(
+                    x = sparkleX,
+                    y = sparkleY,
+                    size = 2f + Math.random().toFloat() * 3f,
+                    opacity = 1f,
+                    life = 0f,
+                    maxLife = SPARKLE_DURATION.toFloat() + Math.random().toFloat() * 200f,
+                    velocityX = (Math.random().toFloat() - 0.5f) * 0.5f,
+                    velocityY = (Math.random().toFloat() - 0.5f) * 0.5f,
+                    rotation = Math.random().toFloat() * 360f,
+                    rotationSpeed = (Math.random().toFloat() - 0.5f) * 5f
+                )
+            )
+        }
+
+        startSparkleAnimation()
+    }
+
+    private fun startSparkleAnimation() {
+        sparkleTimer = Timer(TIMER_DELAY) { _ ->
+            var activeSparkles = false
+
+            for (sparkle in sparkles) {
+                sparkle.life += TIMER_DELAY
+                sparkle.x += sparkle.velocityX
+                sparkle.y += sparkle.velocityY
+
+                val lifeRatio = sparkle.life / sparkle.maxLife
+                sparkle.opacity = (1f - lifeRatio).coerceIn(0f, 1f)
+                sparkle.size = sparkle.size * 0.998f
+
+                if (sparkle.life < sparkle.maxLife) {
+                    activeSparkles = true
+                }
+            }
+
+            if (!activeSparkles) {
+                sparkleTimer?.stop()
+                sparkles.clear()
+            }
+
+            repaint()
+        }
+        sparkleTimer?.start()
     }
 
     override fun paintComponent(g: Graphics) {
@@ -264,6 +347,50 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
 
         g2.color = Color.WHITE
         g2.fill(createRoundRect(thumbX, thumbY, THUMB_SIZE.toFloat(), THUMB_SIZE.toFloat(), THUMB_SIZE.toFloat()))
+
+        for (sparkle in sparkles) {
+            if (sparkle.opacity > 0) {
+                val alpha = (sparkle.opacity * 255).toInt().coerceIn(0, 255)
+                g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, sparkle.opacity)
+
+                val sparkleSize = sparkle.size
+                val cx = sparkle.x
+                val cy = sparkle.y
+
+                g2.color = Color(255, 215, 0, alpha)
+                g2.stroke = BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+
+                g2.drawLine(
+                    (cx - sparkleSize).toInt(),
+                    cy.toInt(),
+                    (cx + sparkleSize).toInt(),
+                    cy.toInt()
+                )
+
+                g2.drawLine(
+                    cx.toInt(),
+                    (cy - sparkleSize).toInt(),
+                    cx.toInt(),
+                    (cy + sparkleSize).toInt()
+                )
+
+                val diagSize = sparkleSize * 0.7f
+                g2.drawLine(
+                    (cx - diagSize).toInt(),
+                    (cy - diagSize).toInt(),
+                    (cx + diagSize).toInt(),
+                    (cy + diagSize).toInt()
+                )
+                g2.drawLine(
+                    (cx - diagSize).toInt(),
+                    (cy + diagSize).toInt(),
+                    (cx + diagSize).toInt(),
+                    (cy - diagSize).toInt()
+                )
+            }
+        }
+
+        g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1.0f)
 
         g2.dispose()
     }
