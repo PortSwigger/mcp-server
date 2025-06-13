@@ -5,6 +5,8 @@ import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.geom.RoundRectangle2D
 import javax.swing.*
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Shared Design constants and utilities for consistent theming across the application
@@ -184,6 +186,9 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
         private const val TIMER_DELAY = 16
         private const val SPARKLE_DURATION = 800
         private const val SPARKLE_COUNT = 8
+        private const val SPARKLE_MARGIN = 8
+        private const val COMPONENT_WIDTH = TRACK_WIDTH + (SPARKLE_MARGIN * 2)
+        private const val COMPONENT_HEIGHT = TRACK_HEIGHT + (SPARKLE_MARGIN * 2)
     }
 
     private var animationProgress = if (isOn) 1.0f else 0.0f
@@ -205,12 +210,22 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
     )
 
     init {
-        preferredSize = Dimension(TRACK_WIDTH, TRACK_HEIGHT)
+        preferredSize = Dimension(COMPONENT_WIDTH, COMPONENT_HEIGHT)
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
 
         addMouseListener(object : MouseAdapter() {
             override fun mousePressed(e: MouseEvent?) {
-                toggle()
+                e?.let { event ->
+                    val toggleBounds = Rectangle(
+                        SPARKLE_MARGIN,
+                        SPARKLE_MARGIN,
+                        TRACK_WIDTH,
+                        TRACK_HEIGHT
+                    )
+                    if (toggleBounds.contains(event.point)) {
+                        toggle()
+                    }
+                }
             }
         })
     }
@@ -224,9 +239,6 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
                 animationProgress = if (isOn) 1.0f else 0.0f
                 repaint()
             }
-            if (isOn) {
-                triggerSparkles()
-            }
         }
     }
 
@@ -234,9 +246,6 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
         isOn = !isOn
         onToggle(isOn)
         animateToState()
-        if (isOn) {
-            triggerSparkles()
-        }
     }
 
     private fun animateToState() {
@@ -255,6 +264,9 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
             if (progress >= 1.0f) {
                 animationTimer?.stop()
                 animationProgress = targetProgress
+                if (isOn) {
+                    triggerSparkles()
+                }
             }
 
             repaint()
@@ -266,14 +278,30 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
         sparkles.clear()
         sparkleTimer?.stop()
 
-        val centerX = TRACK_WIDTH / 2f
-        val centerY = TRACK_HEIGHT / 2f
+        val trackX = SPARKLE_MARGIN.toFloat()
+        val trackY = SPARKLE_MARGIN.toFloat()
+        val thumbX = trackX + PADDING + 1.0f * (TRACK_WIDTH - THUMB_SIZE - 2 * PADDING)
+        val thumbY = trackY + PADDING
+        val thumbCenterX = thumbX + THUMB_SIZE / 2f
+        val thumbCenterY = thumbY + THUMB_SIZE / 2f
 
         for (i in 0 until SPARKLE_COUNT) {
             val angle = (i * 360f / SPARKLE_COUNT) * Math.PI / 180f
-            val distance = 15f + Math.random().toFloat() * 10f
-            val sparkleX = centerX + Math.cos(angle).toFloat() * distance
-            val sparkleY = centerY + Math.sin(angle).toFloat() * distance
+
+            val maxSparkleSize = 5f
+            val safetyBuffer = 2f
+            val distanceToRightEdge = COMPONENT_WIDTH - thumbCenterX - maxSparkleSize - safetyBuffer
+            val distanceToBottomEdge = COMPONENT_HEIGHT - thumbCenterY - maxSparkleSize - safetyBuffer
+            val distanceToLeftEdge = thumbCenterX - maxSparkleSize - safetyBuffer
+            val distanceToTopEdge = thumbCenterY - maxSparkleSize - safetyBuffer
+
+            val maxSafeDistance =
+                minOf(distanceToRightEdge, distanceToBottomEdge, distanceToLeftEdge, distanceToTopEdge)
+            val constrainedMaxDistance = maxSafeDistance.coerceAtLeast(4f)
+
+            val distance = 4f + Math.random().toFloat() * (constrainedMaxDistance - 4f)
+            val sparkleX = thumbCenterX + cos(angle).toFloat() * distance
+            val sparkleY = thumbCenterY + sin(angle).toFloat() * distance
 
             sparkles.add(
                 Sparkle(
@@ -328,11 +356,14 @@ class ToggleSwitch(private var isOn: Boolean, private val onToggle: (Boolean) ->
         val g2 = g.create() as Graphics2D
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
 
-        g2.color = if (isOn) Design.Colors.primary else Design.Colors.outline
-        g2.fill(createRoundRect(0f, 0f, TRACK_WIDTH.toFloat(), TRACK_HEIGHT.toFloat(), TRACK_HEIGHT.toFloat()))
+        val trackX = SPARKLE_MARGIN.toFloat()
+        val trackY = SPARKLE_MARGIN.toFloat()
 
-        val thumbX = PADDING + animationProgress * (TRACK_WIDTH - THUMB_SIZE - 2 * PADDING)
-        val thumbY = PADDING.toFloat()
+        g2.color = if (isOn) Design.Colors.primary else Design.Colors.outline
+        g2.fill(createRoundRect(trackX, trackY, TRACK_WIDTH.toFloat(), TRACK_HEIGHT.toFloat(), TRACK_HEIGHT.toFloat()))
+
+        val thumbX = trackX + PADDING + animationProgress * (TRACK_WIDTH - THUMB_SIZE - 2 * PADDING)
+        val thumbY = trackY + PADDING
 
         g2.color = Color(0, 0, 0, 20)
         g2.fill(
