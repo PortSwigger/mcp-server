@@ -35,7 +35,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                 server = null
 
                 val mcpServer = Server(
-                    serverInfo = Implementation("burp-suite", "1.0.0"), options = ServerOptions(
+                    serverInfo = Implementation("burp-suite", "1.1.0"), options = ServerOptions(
                         capabilities = ServerCapabilities(
                             tools = ServerCapabilities.Tools(listChanged = false)
                         )
@@ -49,7 +49,6 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
 
                         allowMethod(HttpMethod.Get)
                         allowMethod(HttpMethod.Post)
-                        allowMethod(HttpMethod.Options)
 
                         allowHeader(HttpHeaders.ContentType)
                         allowHeader(HttpHeaders.Accept)
