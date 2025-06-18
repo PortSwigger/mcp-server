@@ -7,7 +7,6 @@ import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.providers.ClaudeDesktopProvider
 import net.portswigger.mcp.providers.ManualProxyInstallerProvider
 import net.portswigger.mcp.providers.ProxyJarManager
-import net.portswigger.mcp.server.KtorServerManager
 
 @Suppress("unused")
 class ExtensionBase : BurpExtension {

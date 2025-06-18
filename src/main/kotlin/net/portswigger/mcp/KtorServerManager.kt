@@ -1,4 +1,4 @@
-package net.portswigger.mcp.server
+package net.portswigger.mcp
 
 import burp.api.montoya.MontoyaApi
 import io.ktor.http.*
@@ -13,10 +13,9 @@ import io.modelcontextprotocol.kotlin.sdk.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.server.mcp
-import net.portswigger.mcp.ServerManager
-import net.portswigger.mcp.ServerState
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.tools.registerTools
+import java.net.URI
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -52,7 +51,6 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
 
                         allowHeader(HttpHeaders.ContentType)
                         allowHeader(HttpHeaders.Accept)
-                        allowHeader(HttpHeaders.CacheControl)
                         allowHeader("Last-Event-ID")
 
                         allowCredentials = false
@@ -66,12 +64,10 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                         val referer = call.request.header("Referer")
                         val userAgent = call.request.header("User-Agent")
 
-                        if (origin != null) {
-                            if (!isValidOrigin(origin)) {
-                                api.logging().logToOutput("Blocked DNS rebinding attack from origin: $origin")
-                                call.respond(HttpStatusCode.Forbidden)
-                                return@intercept
-                            }
+                        if (origin != null && !isValidOrigin(origin)) {
+                            api.logging().logToOutput("Blocked DNS rebinding attack from origin: $origin")
+                            call.respond(HttpStatusCode.Forbidden)
+                            return@intercept
                         } else if (isBrowserRequest(userAgent)) {
                             api.logging().logToOutput("Blocked browser request without Origin header")
                             call.respond(HttpStatusCode.Forbidden)
@@ -141,7 +137,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
 
     private fun isValidOrigin(origin: String): Boolean {
         try {
-            val url = java.net.URI(origin).toURL()
+            val url = URI(origin).toURL()
             val hostname = url.host.lowercase()
 
             val allowedHosts = setOf("localhost", "127.0.0.1")
@@ -186,7 +182,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
 
     private fun isValidReferer(referer: String): Boolean {
         try {
-            val url = java.net.URI(referer).toURL()
+            val url = URI(referer).toURL()
             val hostname = url.host.lowercase()
 
             val allowedHosts = setOf("localhost", "127.0.0.1")
