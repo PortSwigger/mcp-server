@@ -149,7 +149,7 @@ class ConfigSecurityFilterTest {
     fun `test security filter on project_options `() {
         config.filterConfigCredentials = true
         projectOptionString = get_project_options_with_customizable_field("testuser", "testpass")
-        val filteredProjectJson = filterProjectConfigCredentials(projectOptionString)
+        val filteredProjectJson = filterConfigCredentials(projectOptionString)
         val parsedJson = Json.parseToJsonElement(filteredProjectJson).jsonObject
 
         val credentials = parsedJson["project_options"]?.jsonObject
@@ -175,7 +175,7 @@ class ConfigSecurityFilterTest {
     fun `test security filter on user_options`() {
         config.filterConfigCredentials = true
         usersOptionString = get_user_options_with_customizable_field("testuser", "testpass")
-        val filteredUserJson = filterUserConfigCredentials(usersOptionString)
+        val filteredUserJson = filterConfigCredentials(usersOptionString)
         val parsedJson = Json.parseToJsonElement(filteredUserJson).jsonObject
 
         val credentials = parsedJson["user_options"]?.jsonObject
@@ -201,7 +201,7 @@ class ConfigSecurityFilterTest {
     fun `test security filter with empty credentials on user_options`() {
         config.filterConfigCredentials = true
         val empty_user_credentials: String = get_user_options_with_customizable_field("", "")
-        val filteredJson = filterUserConfigCredentials(empty_user_credentials)
+        val filteredJson = filterConfigCredentials(empty_user_credentials)
         val parsedJson = Json.parseToJsonElement(filteredJson).jsonObject
 
         val credentials = parsedJson["user_options"]?.jsonObject
@@ -228,7 +228,7 @@ class ConfigSecurityFilterTest {
     fun `test security filter with empty credentials on project_options`() {
         config.filterConfigCredentials = true
         val empty_project_credentials = get_project_options_with_customizable_field("", "")
-        val filteredJson = filterProjectConfigCredentials(empty_project_credentials)
+        val filteredJson = filterConfigCredentials(empty_project_credentials)
         val parsedJson = Json.parseToJsonElement(filteredJson).jsonObject
 
         val credentials = parsedJson["project_options"]?.jsonObject
@@ -275,9 +275,9 @@ class ConfigSecurityFilterTest {
         }
         """.trimIndent()
         val exception = Assertions.assertThrows(RuntimeException::class.java) {
-            filterUserConfigCredentials(malformedJson)
+            filterConfigCredentials(malformedJson)
         }
-        Assertions.assertEquals("Failed to filter user config credentials", exception.message)
+        Assertions.assertEquals("Failed to filter credentials", exception.message)
         Assertions.assertNotNull(exception.cause)
     }
 
@@ -304,9 +304,9 @@ class ConfigSecurityFilterTest {
         
         """.trimIndent()
         val exception = Assertions.assertThrows(RuntimeException::class.java) {
-            filterProjectConfigCredentials(malformedJson)
+            filterConfigCredentials(malformedJson)
         }
-        Assertions.assertEquals("Failed to filter project config credentials", exception.message)
+        Assertions.assertEquals("Failed to filter credentials", exception.message)
         Assertions.assertNotNull(exception.cause)
     }
 
@@ -314,7 +314,7 @@ class ConfigSecurityFilterTest {
     fun `test security filter with username but no password on user_options`() {
         config.filterConfigCredentials = true
         val jsonWithUsernameOnly = get_user_options_with_customizable_field("testuser", "")
-        val filteredJson = filterUserConfigCredentials(jsonWithUsernameOnly)
+        val filteredJson = filterConfigCredentials(jsonWithUsernameOnly)
         val parsedJson = Json.parseToJsonElement(filteredJson).jsonObject
 
         val credentials = parsedJson["user_options"]?.jsonObject
@@ -340,7 +340,7 @@ class ConfigSecurityFilterTest {
     fun `test security filter with username but no password on project_options`() {
         config.filterConfigCredentials = true
         val jsonWithUsernameOnly = get_project_options_with_customizable_field("testuser", "")
-        val filteredJson = filterProjectConfigCredentials(jsonWithUsernameOnly)
+        val filteredJson = filterConfigCredentials(jsonWithUsernameOnly)
         val parsedJson = Json.parseToJsonElement(filteredJson).jsonObject
 
         val credentials = parsedJson["project_options"]?.jsonObject

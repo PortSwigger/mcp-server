@@ -18,8 +18,7 @@ import net.portswigger.mcp.schema.toSerializableForm
 import net.portswigger.mcp.security.DataAccessSecurity
 import net.portswigger.mcp.security.DataAccessType
 import net.portswigger.mcp.security.HttpRequestSecurity
-import net.portswigger.mcp.security.filterUserConfigCredentials
-import net.portswigger.mcp.security.filterProjectConfigCredentials
+import net.portswigger.mcp.security.filterConfigCredentials
 import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
 import javax.swing.JTextArea
@@ -214,7 +213,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     ) {
         val json = api.burpSuite().exportProjectOptionsAsJson()
         if (config.filterConfigCredentials == true) {
-            filterProjectConfigCredentials(json)
+            filterConfigCredentials(json)
         } else {
             json
         }
@@ -226,7 +225,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     ) {
         val json = api.burpSuite().exportUserOptionsAsJson()
         if (config.filterConfigCredentials == true) {
-            filterUserConfigCredentials(json)
+            filterConfigCredentials(json)
         } else {
             json
         }
