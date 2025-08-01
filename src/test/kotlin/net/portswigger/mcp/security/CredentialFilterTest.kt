@@ -11,12 +11,10 @@ import io.mockk.mockk
 import io.mockk.every
 import kotlinx.serialization.json.*
 
-class ConfigSecurityFilterTest {
+class CredentialFilterTest {
 
     private lateinit var config: McpConfig
     private lateinit var api: MontoyaApi
-    private lateinit var projectOptions: JsonElement
-    private lateinit var usersOptions: JsonElement
     private lateinit var mockLogging: Logging
     private lateinit var persistedObject: PersistedObject
     private lateinit var projectOptionString: String
