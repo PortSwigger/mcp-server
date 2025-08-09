@@ -32,7 +32,7 @@ Ensure that the following prerequisites are met before building and installing t
 
 1. **Clone the Repository**: Obtain the source code for the MCP Server Extension.
    ```
-   git clone https://github.com/PortSwigger/mcp-server.git
+   git clone https://github.com/PortSwigger/mcp-server.git burp-mcp
    ```
 
 2. **Navigate to the Project Directory**: Move into the project's root directory.
