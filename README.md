@@ -37,7 +37,7 @@ Ensure that the following prerequisites are met before building and installing t
 
 2. **Navigate to the Project Directory**: Move into the project's root directory.
    ```
-   cd burp-mcp
+   cd mcp-server
    ```
 
 3. **Build the JAR File**: Use Gradle to build the extension.
