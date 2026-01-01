@@ -15,6 +15,10 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     var port by storage.int(9876)
     var requireHttpRequestApproval by storage.boolean(true)
     var requireHistoryAccessApproval by storage.boolean(true)
+    
+    // AI-optimized MCP server configuration options
+    var excerptLengthLimit by storage.int(200)
+    var maxFieldExtractionSize by storage.int(5000)
 
     private var _alwaysAllowHttpHistory by storage.boolean(false)
     var alwaysAllowHttpHistory: Boolean
