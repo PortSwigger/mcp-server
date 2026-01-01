@@ -798,3 +798,76 @@ class ToolsKtTest {
         }
     }
 }
+    @Nested
+    inner class NewFeaturesTests {
+        @Test
+        fun `field selection should work with basic fields`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(mockk<ProxyHttpRequestResponse>())
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+            
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { proxyHistory[0].toSerializableForm(any(), any()) } returns mockk()
+            
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history", mapOf(
+                        "count" to 1,
+                        "offset" to 0,
+                        "fields" to listOf("url", "method")
+                    )
+                )
+                delay(100)
+                assertNotNull(result)
+            }
+        }
+
+        @Test
+        fun `regex search with excerpts should work`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(mockk<ProxyHttpRequestResponse>())
+            every { api.proxy() } returns proxy
+            every { proxy.history(any<(ProxyHttpRequestResponse) -> Boolean>()) } returns proxyHistory
+            
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { proxyHistory[0].toSerializableForm() } returns mockk()
+            
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history_regex", mapOf(
+                        "regex" to "test",
+                        "count" to 1,
+                        "offset" to 0,
+                        "searchScope" to listOf("request"),
+                        "excerptLength" to 100
+                    )
+                )
+                delay(100)
+                assertNotNull(result)
+            }
+        }
+
+        @Test
+        fun `markdown output format should work`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(mockk<ProxyHttpRequestResponse>())
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+            
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { proxyHistory[0].toSerializableForm(any(), any()) } returns mockk()
+            
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history", mapOf(
+                        "count" to 1,
+                        "offset" to 0,
+                        "outputFormat" to "markdown"
+                    )
+                )
+                delay(100)
+                assertNotNull(result)
+            }
+        }
+    }

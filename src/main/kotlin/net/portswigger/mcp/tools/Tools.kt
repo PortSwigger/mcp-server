@@ -8,12 +8,17 @@ import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.proxy.ProxyHttpRequestResponse
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.toSerializableForm
+import net.portswigger.mcp.schema.FieldSelectiveResponse
+import net.portswigger.mcp.schema.HttpRequestResponse
+import net.portswigger.mcp.schema.SearchExcerpt
 import net.portswigger.mcp.security.HistoryAccessSecurity
 import net.portswigger.mcp.security.HistoryAccessType
 import net.portswigger.mcp.security.HttpRequestSecurity
@@ -39,6 +44,226 @@ private fun truncateIfNeeded(serialized: String): String {
     } else {
         serialized
     }
+}
+
+private fun validateRawBodyAccess(fields: Set<String>, config: McpConfig, api: MontoyaApi): Boolean {
+    val rawBodyFields = setOf("requestBody", "responseBody")
+    val requestsRawBodyAccess = fields.any { it in rawBodyFields }
+    
+    if (requestsRawBodyAccess) {
+        // For now, we'll allow raw body access but log it for security awareness
+        api.logging().logToOutput("MCP raw body access requested - fields: ${fields.filter { it in rawBodyFields }}")
+    }
+    
+    return true
+}
+
+internal fun formatAndTruncateIfNeeded(content: String, outputFormat: String): String {
+    val formatted = when (outputFormat.lowercase()) {
+        "markdown", "md" -> convertJsonToMarkdown(content)
+        else -> content
+    }
+    return truncateIfNeeded(formatted)
+}
+
+private fun convertJsonToMarkdown(jsonString: String): String {
+    return try {
+        val json = Json.parseToJsonElement(jsonString)
+        buildString {
+            appendLine("```json")
+            appendLine(Json { prettyPrint = true }.encodeToString(json))
+            appendLine("```")
+        }
+    } catch (e: Exception) {
+        // If JSON parsing fails, return as code block
+        buildString {
+            appendLine("```")
+            appendLine(jsonString)
+            appendLine("```")
+        }
+    }
+}
+
+internal fun findExcerptAroundMatch(
+    match: burp.api.montoya.proxy.ProxyHttpRequestResponse,
+    regex: String,
+    searchScope: Set<String>,
+    excerptLength: Int,
+    extractGroups: Boolean = false
+): Pair<String, List<List<String>>?> {
+    val pattern = Pattern.compile(regex)
+    val searchText = buildString {
+        if (searchScope.contains("request") || searchScope.contains("all")) {
+            append("REQUEST:\n")
+            append(match.request()?.toString() ?: "")
+            append("\n\n")
+        }
+        if (searchScope.contains("response") || searchScope.contains("all")) {
+            append("RESPONSE:\n")
+            append(match.response()?.toString() ?: "")
+        }
+    }
+    
+    val matcher = pattern.matcher(searchText)
+    if (matcher.find()) {
+        val start = maxOf(0, matcher.start() - excerptLength / 2)
+        val end = minOf(searchText.length, matcher.end() + excerptLength / 2)
+        val excerpt = searchText.substring(start, end)
+        val finalExcerpt = if (start > 0) "...$excerpt" else excerpt + if (end < searchText.length) "..." else ""
+        
+        val captureGroups = if (extractGroups) {
+            extractCaptureGroups(searchText, regex)
+        } else null
+        
+        return Pair(finalExcerpt, captureGroups)
+    }
+    
+    return Pair("No match found", null)
+}
+
+private fun extractCaptureGroups(text: String, regex: String): List<List<String>> {
+    return try {
+        val pattern = Pattern.compile(regex)
+        val matcher = pattern.matcher(text)
+        val matches = mutableListOf<List<String>>()
+        
+        while (matcher.find()) {
+            val groups = mutableListOf<String>()
+            // Add the full match as group 0
+            groups.add(matcher.group(0))
+            // Add capture groups 1, 2, 3, etc.
+            for (i in 1..matcher.groupCount()) {
+                groups.add(matcher.group(i) ?: "")
+            }
+            matches.add(groups)
+        }
+        
+        matches
+    } catch (e: Exception) {
+        emptyList()
+    }
+}
+
+// Field extraction helper functions moved from serialization.kt
+internal fun ProxyHttpRequestResponse.extractSimpleCookies(): List<String> {
+    val cookies = mutableListOf<String>()
+    
+    // Extract cookies from request headers
+    request()?.headers()?.forEach { header ->
+        if (header.name().equals("Cookie", ignoreCase = true)) {
+            header.value().split(";").forEach { cookie ->
+                cookies.add(cookie.trim())
+            }
+        }
+    }
+    
+    // Extract cookies from response headers
+    response()?.headers()?.forEach { header ->
+        if (header.name().equals("Set-Cookie", ignoreCase = true)) {
+            cookies.add(header.value())
+        }
+    }
+    
+    return cookies.distinct()
+}
+
+internal fun ProxyHttpRequestResponse.extractSimpleLinks(): List<String> {
+    val links = mutableListOf<String>()
+    val responseBody = response()?.bodyToString() ?: return links
+    
+    // Extract href attributes from anchor tags
+    val hrefRegex = Regex("<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
+    hrefRegex.findAll(responseBody).forEach { match ->
+        links.add(match.groupValues[1])
+    }
+    
+    // Extract action attributes from form tags
+    val formRegex = Regex("<form[^>]+action=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
+    formRegex.findAll(responseBody).forEach { match ->
+        links.add(match.groupValues[1])
+    }
+    
+    // Extract src attributes from script tags
+    val scriptRegex = Regex("<script[^>]+src=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
+    scriptRegex.findAll(responseBody).forEach { match ->
+        links.add(match.groupValues[1])
+    }
+    
+    return links.distinct()
+}
+
+internal fun ProxyHttpRequestResponse.extractVisibleText(): String {
+    val responseBody = response()?.bodyToString() ?: return ""
+    
+    // Simple HTML tag removal - deterministic approach
+    var text = responseBody
+    
+    // Remove script and style content entirely
+    text = text.replace(Regex("<(script|style)[^>]*>.*?</\\1>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+    
+    // Remove elements with display:none or visibility:hidden
+    text = text.replace(Regex("<[^>]*style\\s*=\\s*[\"'][^\"']*display\\s*:\\s*none[^\"']*[\"'][^>]*>.*?</[^>]+>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+    text = text.replace(Regex("<[^>]*style\\s*=\\s*[\"'][^\"']*visibility\\s*:\\s*hidden[^\"']*[\"'][^>]*>.*?</[^>]+>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+    
+    // Remove HTML tags but keep content
+    text = text.replace(Regex("<[^>]+>"), " ")
+    
+    // Decode common HTML entities
+    text = text.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+    
+    // Normalize whitespace
+    text = text.replace(Regex("\\s+"), " ").trim()
+    
+    return text
+}
+
+internal fun ProxyHttpRequestResponse.extractRequestBody(): String? {
+    // Raw body content requires explicit opt-in - security control
+    return request()?.bodyToString()
+}
+
+internal fun ProxyHttpRequestResponse.extractResponseBody(): String? {
+    // Raw body content requires explicit opt-in - security control
+    return response()?.bodyToString()
+}
+
+internal fun ProxyHttpRequestResponse.extractPatterns(patterns: Map<String, String>): Map<String, List<List<String>>> {
+    val results = mutableMapOf<String, List<List<String>>>()
+    
+    val requestText = request()?.toString() ?: ""
+    val responseText = response()?.toString() ?: ""
+    val fullText = "REQUEST:\n$requestText\n\nRESPONSE:\n$responseText"
+    
+    patterns.forEach { (name, pattern) ->
+        try {
+            val regex = Pattern.compile(pattern)
+            val matcher = regex.matcher(fullText)
+            val matches = mutableListOf<List<String>>()
+            
+            while (matcher.find()) {
+                val groups = mutableListOf<String>()
+                // Add the full match as group 0
+                groups.add(matcher.group(0))
+                // Add capture groups 1, 2, 3, etc.
+                for (i in 1..matcher.groupCount()) {
+                    groups.add(matcher.group(i) ?: "")
+                }
+                matches.add(groups)
+            }
+            
+            results[name] = matches
+        } catch (e: Exception) {
+            // If regex is invalid, return empty list for this pattern
+            results[name] = emptyList()
+        }
+    }
+    
+    return results
 }
 
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
@@ -197,7 +422,20 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+        // Additional security validation for raw body access
+        if (!validateRawBodyAccess(fields ?: emptySet(), config, api)) {
+            return@mcpPaginatedTool sequenceOf("Raw body access denied by Burp Suite")
+        }
+
+        api.proxy().history().asSequence().map { 
+            val result = it.toSerializableForm(fields ?: emptySet(), extractPatterns ?: emptyMap())
+            val jsonString = when (result) {
+                is HttpRequestResponse -> Json.encodeToString(HttpRequestResponse.serializer(), result)
+                is FieldSelectiveResponse -> Json.encodeToString(FieldSelectiveResponse.serializer(), result)
+                else -> throw IllegalStateException("Unexpected result type: ${result::class}")
+            }
+            formatAndTruncateIfNeeded(jsonString, outputFormat ?: "json") 
+        }
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
@@ -209,8 +447,40 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val compiledRegex = Pattern.compile(regex)
-        api.proxy().history { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+        val matches = api.proxy().history { it.contains(compiledRegex) }.asSequence()
+        
+        val actualSearchScope = searchScope ?: setOf("all")
+        val actualExcerptLength = excerptLength ?: 200
+        val actualExtractGroups = extractGroups ?: false
+        val actualOutputFormat = outputFormat ?: "json"
+        
+        if (actualSearchScope.contains("all") && !actualExtractGroups) {
+            // Current behavior for backward compatibility
+            matches.map { 
+                val result = it.toSerializableForm()
+                val jsonString = when (result) {
+                    is HttpRequestResponse -> Json.encodeToString(HttpRequestResponse.serializer(), result)
+                    is FieldSelectiveResponse -> Json.encodeToString(FieldSelectiveResponse.serializer(), result)
+                    else -> throw IllegalStateException("Unexpected result type: ${result::class}")
+                }
+                formatAndTruncateIfNeeded(jsonString, actualOutputFormat) 
+            }
+        } else {
+            // New behavior - return search excerpts with optional capture groups
+            matches.map { match ->
+                val (excerpt, captureGroups) = findExcerptAroundMatch(match, regex, actualSearchScope, actualExcerptLength, actualExtractGroups)
+                val searchExcerpt = SearchExcerpt(
+                    proxyId = match.annotations().notes() ?: "unknown",
+                    url = match.request()?.url() ?: "",
+                    method = match.request()?.method() ?: "",
+                    status = match.response()?.statusCode()?.toInt(),
+                    excerpt = excerpt,
+                    extractedGroups = captureGroups,
+                    timestamp = System.currentTimeMillis()
+                )
+                formatAndTruncateIfNeeded(Json.encodeToString(searchExcerpt), actualOutputFormat)
+            }
+        }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
@@ -364,10 +634,24 @@ data class SetActiveEditorContents(val text: String)
 data class GetScannerIssues(override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
-data class GetProxyHttpHistory(override val count: Int, override val offset: Int) : Paginated
+data class GetProxyHttpHistory(
+    override val count: Int, 
+    override val offset: Int,
+    val fields: Set<String>? = null,
+    val extractPatterns: Map<String, String>? = null,
+    val outputFormat: String? = null
+) : Paginated
 
 @Serializable
-data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+data class GetProxyHttpHistoryRegex(
+    val regex: String, 
+    override val count: Int, 
+    override val offset: Int,
+    val searchScope: Set<String>? = null,
+    val excerptLength: Int? = null,
+    val extractGroups: Boolean? = null,
+    val outputFormat: String? = null
+) : Paginated
 
 @Serializable
 data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated

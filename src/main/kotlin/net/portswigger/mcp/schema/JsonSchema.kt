@@ -21,7 +21,7 @@ fun getJsonSchemaForProperty(kType: kotlin.reflect.KType): JsonElement {
         Boolean::class ->
             JsonObject(mapOf("type" to JsonPrimitive("boolean")))
 
-        List::class, Array::class -> {
+        List::class, Array::class, Set::class -> {
             val argType = kType.arguments.firstOrNull()?.type
             val itemsSchema = when {
                 argType != null -> getJsonSchemaForProperty(argType)
