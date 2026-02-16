@@ -1,23 +1,40 @@
-<p>Integrate Burp Suite with AI Clients using the Model Context Protocol (MCP).</p>
+<p>
+	Integrates Burp Suite with AI clients using the Model Context Protocol (MCP). This extension exposes Burp
+	functionality through an MCP server, enabling AI assistants to perform security testing tasks, analyze traffic, and
+	interact with Burp tools programmatically.
+</p>
 
-<p>For more information about the protocol visit: <a href="https://modelcontextprotocol.io/">modelcontextprotocol.io</a></p>
+<p>
+	For more information about the protocol, visit <a
+		href="https://modelcontextprotocol.io/">modelcontextprotocol.io</a>
+</p>
 
-<p><strong>Note:</strong> Any data sent to external tools via this extension is subject to their data processing policies.</p>
+<p>
+	<strong>Note:</strong> Any data sent to external tools via this extension is subject to their data processing
+	policies.
+</p>
 
 <h2>Features</h2>
-
 <ul>
-	<li>Connect Burp Suite to AI clients through MCP</li>
-	<li>Automatic installation for Claude Desktop</li>
-	<li>Comes with packaged Stdio MCP proxy server</li>
+	<li>Send HTTP/1.1 and HTTP/2 requests directly from AI clients with security controls</li>
+	<li>Access and filter proxy history (HTTP and WebSocket) with regex support</li>
+	<li>Generate and poll Burp Collaborator payloads for out-of-band testing (Professional only)</li>
+	<li>Create Repeater tabs and send requests to Intruder</li>
+	<li>Export and modify project and user configuration via JSON</li>
+	<li>Control proxy intercept, task execution engine, and message editor contents</li>
+	<li>Built-in encoding utilities (URL, Base64) and random string generation</li>
+	<li>Automatic Claude Desktop installation with packaged stdio proxy server</li>
+	<li>Configurable target approval system for HTTP requests and history access</li>
 </ul>
 
 <h2>Usage</h2>
-
 <ol>
-	<li>Configure your Burp MCP server in the extension-provided tab.</li>
-	<li>Configure your MCP client to use the Burp SSE MCP server or stdio proxy.</li>
-	<li>Interact with Burp through your client.</li>
+	<li>Navigate to the "MCP" tab and enable the MCP server.</li>
+	<li>Configure security settings including auto-approve targets and configuration editing permissions.</li>
+	<li>Use the installer button to automatically configure Claude Desktop, or manually configure your MCP client to
+		connect to <code class="InlineCode">http://127.0.0.1:9876</code> (SSE mode) or use the packaged stdio proxy
+		server.</li>
+	<li>Interact with Burp through your AI client using the available MCP tools.</li>
 </ol>
 
-<p><br>Copyright &copy; 2025 PortSwigger Ltd.</p>
+<p><br>Copyright &copy; 2025-2026 PortSwigger Ltd.</p>

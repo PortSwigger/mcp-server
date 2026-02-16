@@ -4,7 +4,7 @@ Name: MCP Server
 RepoName: mcp-server
 ScreenVersion: 1.1.1
 SerialVersion: 5
-MinPlatformVersion: 22
+MinPlatformVersion: 26
 ProOnly: False
 Author: Daniel S, PortSwigger & Daniel Allen, PortSwigger
 ShortDescription: Integrate Burp Suite with AI Clients using the Model Context Protocol (MCP).
