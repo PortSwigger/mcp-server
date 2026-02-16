@@ -2,10 +2,12 @@ package net.portswigger.mcp.tools
 
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.burpsuite.TaskExecutionEngine
+import burp.api.montoya.collaborator.*
 import burp.api.montoya.core.BurpSuiteEdition
 import burp.api.montoya.core.ByteArray
 import burp.api.montoya.http.Http
 import burp.api.montoya.http.HttpMode
+import burp.api.montoya.http.HttpProtocol
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
 import burp.api.montoya.logging.Logging
@@ -17,6 +19,9 @@ import burp.api.montoya.utilities.RandomUtils
 import burp.api.montoya.utilities.URLUtils
 import burp.api.montoya.utilities.Utilities
 import io.mockk.*
+import java.net.InetAddress
+import java.time.ZonedDateTime
+import java.util.Optional
 import io.modelcontextprotocol.kotlin.sdk.CallToolResultBase
 import io.modelcontextprotocol.kotlin.sdk.TextContent
 import kotlinx.coroutines.delay
@@ -754,6 +759,231 @@ class ToolsKtTest {
         }
     }
     
+    @Nested
+    inner class CollaboratorToolsTests {
+        private val collaborator = mockk<Collaborator>()
+        private val collaboratorClient = mockk<CollaboratorClient>()
+        private val collaboratorServer = mockk<CollaboratorServer>()
+
+        @BeforeEach
+        fun setupCollaborator() {
+            mockkStatic(InteractionFilter::class)
+
+            val burpSuite = mockk<burp.api.montoya.burpsuite.BurpSuite>()
+            val version = mockk<burp.api.montoya.core.Version>()
+            every { api.burpSuite() } returns burpSuite
+            every { burpSuite.version() } returns version
+            every { version.edition() } returns BurpSuiteEdition.PROFESSIONAL
+            every { burpSuite.taskExecutionEngine() } returns mockk(relaxed = true)
+            every { burpSuite.exportProjectOptionsAsJson() } returns "{}"
+            every { burpSuite.exportUserOptionsAsJson() } returns "{}"
+            every { burpSuite.importProjectOptionsFromJson(any()) } just runs
+            every { burpSuite.importUserOptionsFromJson(any()) } just runs
+
+            every { api.collaborator() } returns collaborator
+            every { collaborator.createClient() } returns collaboratorClient
+            every { collaboratorClient.server() } returns collaboratorServer
+            every { collaboratorServer.address() } returns "burpcollaborator.net"
+
+            serverManager.stop {}
+            serverStarted = false
+            serverManager.start(config) { state ->
+                if (state is ServerState.Running) serverStarted = true
+            }
+
+            runBlocking {
+                var attempts = 0
+                while (!serverStarted && attempts < 30) {
+                    delay(100)
+                    attempts++
+                }
+                if (!serverStarted) throw IllegalStateException("Server failed to start after timeout")
+                client.connectToServer("http://127.0.0.1:${testPort}")
+            }
+        }
+
+        @AfterEach
+        fun cleanupCollaborator() {
+            unmockkStatic(InteractionFilter::class)
+        }
+
+        private fun mockInteraction(
+            id: String,
+            type: InteractionType,
+            clientIp: String = "10.0.0.1",
+            clientPort: Int = 54321,
+            customData: String? = null,
+            dnsDetails: DnsDetails? = null,
+            httpDetails: HttpDetails? = null,
+            smtpDetails: SmtpDetails? = null
+        ): Interaction {
+            val interactionId = mockk<InteractionId>()
+            every { interactionId.toString() } returns id
+
+            return mockk<Interaction>().also {
+                every { it.id() } returns interactionId
+                every { it.type() } returns type
+                every { it.timeStamp() } returns ZonedDateTime.parse("2025-01-01T12:00:00Z")
+                every { it.clientIp() } returns InetAddress.getByName(clientIp)
+                every { it.clientPort() } returns clientPort
+                every { it.customData() } returns Optional.ofNullable(customData)
+                every { it.dnsDetails() } returns Optional.ofNullable(dnsDetails)
+                every { it.httpDetails() } returns Optional.ofNullable(httpDetails)
+                every { it.smtpDetails() } returns Optional.ofNullable(smtpDetails)
+            }
+        }
+
+        @Test
+        fun `generate payload should return payload and server info`() {
+            val payload = mockk<CollaboratorPayload>()
+            val payloadId = mockk<InteractionId>()
+            every { payload.toString() } returns "abc123.burpcollaborator.net"
+            every { payload.id() } returns payloadId
+            every { payloadId.toString() } returns "abc123"
+            every { collaboratorClient.generatePayload() } returns payload
+
+            runBlocking {
+                val result = client.callTool("generate_collaborator_payload", emptyMap())
+                delay(100)
+                result.expectTextContent(
+                    "Payload: abc123.burpcollaborator.net\n" +
+                    "Payload ID: abc123\n" +
+                    "Collaborator server: burpcollaborator.net"
+                )
+            }
+
+            verify(exactly = 1) { collaboratorClient.generatePayload() }
+        }
+
+        @Test
+        fun `generate payload with custom data should pass custom data`() {
+            val payload = mockk<CollaboratorPayload>()
+            val payloadId = mockk<InteractionId>()
+            every { payload.toString() } returns "custom123.burpcollaborator.net"
+            every { payload.id() } returns payloadId
+            every { payloadId.toString() } returns "custom123"
+            every { collaboratorClient.generatePayload(any<String>()) } returns payload
+
+            runBlocking {
+                val result = client.callTool(
+                    "generate_collaborator_payload", mapOf(
+                        "customData" to "mydata"
+                    )
+                )
+                delay(100)
+                result.expectTextContent(
+                    "Payload: custom123.burpcollaborator.net\n" +
+                    "Payload ID: custom123\n" +
+                    "Collaborator server: burpcollaborator.net"
+                )
+            }
+
+            verify(exactly = 1) { collaboratorClient.generatePayload("mydata") }
+        }
+
+        @Test
+        fun `get interactions should return dns interaction details`() {
+            val dnsDetails = mockk<DnsDetails>().also {
+                every { it.queryType() } returns DnsQueryType.A
+            }
+            val interaction = mockInteraction("int-001", InteractionType.DNS, dnsDetails = dnsDetails)
+            every { collaboratorClient.getAllInteractions() } returns listOf(interaction)
+
+            runBlocking {
+                val result = client.callTool("get_collaborator_interactions", emptyMap())
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("\"id\":\"int-001\""))
+                assertTrue(text.contains("\"type\":\"DNS\""))
+                assertTrue(text.contains("\"queryType\":\"A\""))
+                assertTrue(text.contains("\"clientIp\":\"10.0.0.1\""))
+            }
+
+            verify(exactly = 1) { collaboratorClient.getAllInteractions() }
+        }
+
+        @Test
+        fun `get interactions should return http interaction details`() {
+            val mockRequest = mockk<burp.api.montoya.http.message.requests.HttpRequest>()
+            every { mockRequest.toString() } returns "GET / HTTP/1.1"
+            val mockResponse = mockk<burp.api.montoya.http.message.responses.HttpResponse>()
+            every { mockResponse.toString() } returns "HTTP/1.1 200 OK"
+            val mockRequestResponse = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+            every { mockRequestResponse.request() } returns mockRequest
+            every { mockRequestResponse.response() } returns mockResponse
+
+            val httpDetails = mockk<HttpDetails>().also {
+                every { it.protocol() } returns HttpProtocol.HTTP
+                every { it.requestResponse() } returns mockRequestResponse
+            }
+            val interaction = mockInteraction("int-002", InteractionType.HTTP, httpDetails = httpDetails)
+            every { collaboratorClient.getAllInteractions() } returns listOf(interaction)
+
+            runBlocking {
+                val result = client.callTool("get_collaborator_interactions", emptyMap())
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("\"type\":\"HTTP\""))
+                assertTrue(text.contains("\"protocol\":\"HTTP\""))
+                assertTrue(text.contains("GET / HTTP/1.1"))
+                assertTrue(text.contains("HTTP/1.1 200 OK"))
+            }
+
+            verify(exactly = 1) { collaboratorClient.getAllInteractions() }
+        }
+
+        @Test
+        fun `get interactions should return smtp interaction details`() {
+            val smtpDetails = mockk<SmtpDetails>().also {
+                every { it.protocol() } returns SmtpProtocol.SMTP
+                every { it.conversation() } returns "EHLO test\r\n250 OK"
+            }
+            val interaction = mockInteraction("int-003", InteractionType.SMTP, smtpDetails = smtpDetails)
+            every { collaboratorClient.getAllInteractions() } returns listOf(interaction)
+
+            runBlocking {
+                val result = client.callTool("get_collaborator_interactions", emptyMap())
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("\"type\":\"SMTP\""))
+                assertTrue(text.contains("\"protocol\":\"SMTP\""))
+                assertTrue(text.contains("EHLO test"))
+            }
+
+            verify(exactly = 1) { collaboratorClient.getAllInteractions() }
+        }
+
+        @Test
+        fun `get interactions with payloadId should use filter`() {
+            val mockFilter = mockk<InteractionFilter>()
+            every { InteractionFilter.interactionIdFilter("abc123") } returns mockFilter
+            every { collaboratorClient.getInteractions(mockFilter) } returns emptyList()
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_collaborator_interactions", mapOf(
+                        "payloadId" to "abc123"
+                    )
+                )
+                delay(100)
+                result.expectTextContent("No interactions detected")
+            }
+
+            verify(exactly = 1) { collaboratorClient.getInteractions(mockFilter) }
+        }
+
+        @Test
+        fun `get interactions should return no interactions message when empty`() {
+            every { collaboratorClient.getAllInteractions() } returns emptyList()
+
+            runBlocking {
+                val result = client.callTool("get_collaborator_interactions", emptyMap())
+                delay(100)
+                result.expectTextContent("No interactions detected")
+            }
+        }
+    }
+
     @Test
     fun `tool name conversion should work properly`() {
         assertEquals("send_http1_request", "SendHttp1Request".toLowerSnakeCase())
@@ -773,16 +1003,18 @@ class ToolsKtTest {
         runBlocking {
             val tools = client.listTools()
             assertFalse(tools.any { it.name == "get_scanner_issues" })
+            assertFalse(tools.any { it.name == "generate_collaborator_payload" })
+            assertFalse(tools.any { it.name == "get_collaborator_interactions" })
         }
-        
+
         every { version.edition() } returns BurpSuiteEdition.PROFESSIONAL
-        
+
         serverManager.stop {}
         serverStarted = false
         serverManager.start(config) { state ->
             if (state is ServerState.Running) serverStarted = true
         }
-        
+
         runBlocking {
             var attempts = 0
             while (!serverStarted && attempts < 30) {
@@ -790,11 +1022,13 @@ class ToolsKtTest {
                 attempts++
             }
             if (!serverStarted) throw IllegalStateException("Server failed to start after timeout")
-            
+
             client.connectToServer("http://127.0.0.1:${testPort}")
-            
+
             val tools = client.listTools()
             assertTrue(tools.any { it.name == "get_scanner_issues" })
+            assertTrue(tools.any { it.name == "generate_collaborator_payload" })
+            assertTrue(tools.any { it.name == "get_collaborator_interactions" })
         }
     }
 }
