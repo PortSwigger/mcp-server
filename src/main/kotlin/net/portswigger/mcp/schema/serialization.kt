@@ -1,5 +1,6 @@
 package net.portswigger.mcp.schema
 
+import burp.api.montoya.collaborator.Interaction as CollaboratorInteraction
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
 import burp.api.montoya.proxy.ProxyWebSocketMessage
 import burp.api.montoya.scanner.audit.issues.AuditIssue
@@ -133,4 +134,62 @@ data class WebSocketMessage(
     val payload: String?,
     val direction: WebSocketMessageDirection,
     val notes: String?
+)
+
+fun CollaboratorInteraction.toSerializableForm(): CollaboratorInteractionDetails {
+    return CollaboratorInteractionDetails(
+        id = id().toString(),
+        type = type().name,
+        timestamp = timeStamp().toString(),
+        clientIp = clientIp().hostAddress,
+        clientPort = clientPort(),
+        customData = customData().orElse(null),
+        dnsDetails = dnsDetails().orElse(null)?.let {
+            CollaboratorDnsDetails(queryType = it.queryType().name)
+        },
+        httpDetails = httpDetails().orElse(null)?.let {
+            CollaboratorHttpDetails(
+                protocol = it.protocol().name,
+                request = it.requestResponse()?.request()?.toString(),
+                response = it.requestResponse()?.response()?.toString()
+            )
+        },
+        smtpDetails = smtpDetails().orElse(null)?.let {
+            CollaboratorSmtpDetails(
+                protocol = it.protocol().name,
+                conversation = it.conversation()
+            )
+        }
+    )
+}
+
+@Serializable
+data class CollaboratorInteractionDetails(
+    val id: String,
+    val type: String,
+    val timestamp: String,
+    val clientIp: String,
+    val clientPort: Int,
+    val customData: String?,
+    val dnsDetails: CollaboratorDnsDetails?,
+    val httpDetails: CollaboratorHttpDetails?,
+    val smtpDetails: CollaboratorSmtpDetails?
+)
+
+@Serializable
+data class CollaboratorDnsDetails(
+    val queryType: String
+)
+
+@Serializable
+data class CollaboratorHttpDetails(
+    val protocol: String,
+    val request: String?,
+    val response: String?
+)
+
+@Serializable
+data class CollaboratorSmtpDetails(
+    val protocol: String,
+    val conversation: String
 )
