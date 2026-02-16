@@ -2,12 +2,12 @@ Uuid: 9952290f04ed4f628e624d0aa9dccebc
 ExtensionType: 1
 Name: MCP Server
 RepoName: mcp-server
-ScreenVersion: 1.1.1
-SerialVersion: 5
+ScreenVersion: 1.2.0
+SerialVersion: 6
 MinPlatformVersion: 26
 ProOnly: False
 Author: Daniel S, PortSwigger & Daniel Allen, PortSwigger
 ShortDescription: Integrate Burp Suite with AI Clients using the Model Context Protocol (MCP).
-EntryPoint: build/libs/burp-mcp-all.jar
+EntryPoint: burp-mcp-all.jar
 BuildCommand: ./gradlew embedProxyJar
 SupportedProducts: Pro, Community
