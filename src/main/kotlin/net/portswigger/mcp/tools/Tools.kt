@@ -255,6 +255,21 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
+    mcpPaginatedTool<GetProxyHttpHistoryScope>("Displays all in-scope items within the proxy HTTP history") {
+        api.proxy().history { api.scope().isInScope(it.toString()) }.asSequence()
+            .map {
+                // Limit the size of serialized data to prevent overflow
+                val serialized = Json.encodeToString(it.toSerializableForm())
+                if (serialized.length > 5000) {
+                    // Truncate long responses to prevent chat overflow
+                    val truncated = serialized.substring(0, 5000) + "... (truncated)"
+                    truncated
+                } else {
+                    serialized
+                }
+            }
+    }
+
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
         val allowed = runBlocking {
             checkHistoryPermissionOrDeny(HistoryAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
@@ -311,6 +326,11 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         "Editor text has been set"
     }
+
+    mcpTool<AddTargetToScope>("Adds the specified target to Burp Suite's scope") {
+        api.scope().includeInScope(target)
+        "Target has been added to scope"
+    }
 }
 
 fun getActiveEditor(api: MontoyaApi): JTextArea? {
@@ -356,7 +376,7 @@ data class SendHttp2Request(
 
 @Serializable
 data class CreateRepeaterTab(
-    val tabName: String?,
+    val tabName: String = "",
     val content: String,
     override val targetHostname: String,
     override val targetPort: Int,
@@ -365,7 +385,7 @@ data class CreateRepeaterTab(
 
 @Serializable
 data class SendToIntruder(
-    val tabName: String?,
+    val tabName: String = "",
     val content: String,
     override val targetHostname: String,
     override val targetPort: Int,
@@ -403,6 +423,9 @@ data class SetProxyInterceptState(val intercepting: Boolean)
 data class SetActiveEditorContents(val text: String)
 
 @Serializable
+data class AddTargetToScope(val target: String)
+
+@Serializable
 data class GetScannerIssues(override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
@@ -410,6 +433,9 @@ data class GetProxyHttpHistory(override val count: Int, override val offset: Int
 
 @Serializable
 data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetProxyHttpHistoryScope( override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
 data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated
