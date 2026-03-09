@@ -25,7 +25,7 @@ For more information about the protocol visit: [modelcontextprotocol.io](https:/
 
 Ensure that the following prerequisites are met before building and installing the extension:
 
-1. **Java**: Java must be installed and available in your system's PATH. You can verify this by running `java --version` in your terminal.
+1. **Java**: Java must be installed and available in your system's PATH. You can verify this by running `java --version`(`java -version` on older versions of java) in your terminal.
 2. **jar Command**: The `jar` command must be executable and available in your system's PATH. You can verify this by running `jar --version` in your terminal. This is required for building and installing the extension.
 
 ### Building the Extension
