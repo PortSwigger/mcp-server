@@ -982,6 +982,51 @@ class ToolsKtTest {
                 result.expectTextContent("No interactions detected")
             }
         }
+
+        @Test
+        fun `start active audit should build initial request from target url`() {
+            val scanner = mockk<burp.api.montoya.scanner.Scanner>()
+            val scope = mockk<burp.api.montoya.scope.Scope>(relaxed = true)
+            val siteMap = mockk<burp.api.montoya.sitemap.SiteMap>()
+            val crawl = mockk<burp.api.montoya.scanner.Crawl>(relaxed = true)
+            val crawlConfig = mockk<burp.api.montoya.scanner.CrawlConfiguration>()
+            val audit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
+            val auditConfig = mockk<burp.api.montoya.scanner.AuditConfiguration>()
+            val request = mockk<HttpRequest>()
+
+            mockkStatic(burp.api.montoya.scanner.CrawlConfiguration::class)
+            mockkStatic(burp.api.montoya.scanner.AuditConfiguration::class)
+
+            every { api.scope() } returns scope
+            every { api.scanner() } returns scanner
+            every { api.siteMap() } returns siteMap
+            every { siteMap.requestResponses() } returns emptyList()
+            every { burp.api.montoya.scanner.CrawlConfiguration.crawlConfiguration("https://example.com") } returns crawlConfig
+            every {
+                burp.api.montoya.scanner.AuditConfiguration.auditConfiguration(
+                    burp.api.montoya.scanner.BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
+                )
+            } returns auditConfig
+            every { scanner.startCrawl(crawlConfig) } returns crawl
+            every { scanner.startAudit(auditConfig) } returns audit
+            every { HttpRequest.httpRequestFromUrl("https://example.com") } returns request
+
+            runBlocking {
+                val result = client.callTool(
+                    "start_active_audit", mapOf(
+                        "targetUrl" to "https://example.com"
+                    )
+                )
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("Active scan started for https://example.com"))
+            }
+
+            verify(exactly = 1) { HttpRequest.httpRequestFromUrl("https://example.com") }
+            verify(exactly = 1) { audit.addRequest(request) }
+            unmockkStatic(burp.api.montoya.scanner.CrawlConfiguration::class)
+            unmockkStatic(burp.api.montoya.scanner.AuditConfiguration::class)
+        }
     }
 
     @Test

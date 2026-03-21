@@ -247,7 +247,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                 BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
             )
             val audit = api.scanner().startAudit(auditConfig)
-            audit.addRequest(HttpRequest.httpRequest(targetUrl))
+            audit.addRequest(HttpRequest.httpRequestFromUrl(targetUrl))
 
             val targetHost = java.net.URI(targetUrl).host
             val seen = mutableSetOf<String>()
