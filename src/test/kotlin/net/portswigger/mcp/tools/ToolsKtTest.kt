@@ -1024,6 +1024,10 @@ class ToolsKtTest {
 
             verify(exactly = 1) { HttpRequest.httpRequestFromUrl("https://example.com") }
             verify(exactly = 1) { audit.addRequest(request) }
+            verify { api.logging().logToOutput(match { it.contains("starting active audit for https://example.com") }) }
+            verify { api.logging().logToOutput(match { it.contains("crawl started for https://example.com") }) }
+            verify { api.logging().logToOutput(match { it.contains("audit started for https://example.com") }) }
+            verify { api.logging().logToOutput(match { it.contains("added initial audit request for https://example.com") }) }
             unmockkStatic(burp.api.montoya.scanner.CrawlConfiguration::class)
             unmockkStatic(burp.api.montoya.scanner.AuditConfiguration::class)
         }
@@ -1033,6 +1037,7 @@ class ToolsKtTest {
             val audit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
             val request = mockk<HttpRequest>()
             val requestResponse = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+            val logging = mockk<Logging>(relaxed = true)
 
             every { requestResponse.request() } returns request
             every { request.url() } returns "https://example.com/filter"
@@ -1043,9 +1048,11 @@ class ToolsKtTest {
                 requestResponses = listOf(requestResponse),
                 targetHost = "example.com",
                 seen = mutableSetOf(),
+                logging = logging,
             )
 
             verify(exactly = 0) { audit.addRequestResponse(any<burp.api.montoya.http.message.HttpRequestResponse>()) }
+            verify { logging.logToOutput(match { it.contains("skipping site map item without response") }) }
         }
     }
 

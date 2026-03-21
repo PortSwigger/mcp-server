@@ -10,6 +10,7 @@ import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.HttpRequestResponse
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.logging.Logging
 import burp.api.montoya.scanner.AuditConfiguration
 import burp.api.montoya.scanner.BuiltInAuditConfiguration
 import burp.api.montoya.scanner.CrawlConfiguration
@@ -52,15 +53,18 @@ internal fun addMatchingResponsesToAudit(
     requestResponses: List<HttpRequestResponse>,
     targetHost: String,
     seen: MutableSet<String>,
+    logging: Logging,
 ) {
     requestResponses.forEach { requestResponse ->
         if (requestResponse.response() == null) {
+            logging.logToOutput("MCP start_active_audit: skipping site map item without response")
             return@forEach
         }
 
         val url = requestResponse.request().url()
         if (url.contains(targetHost) && seen.add(url)) {
             audit.addRequestResponse(requestResponse)
+            logging.logToOutput("MCP start_active_audit: added site map item to audit: $url")
         }
     }
 }
@@ -258,16 +262,20 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             "The crawl discovers pages and the audit checks for vulnerabilities. " +
             "Results can be retrieved later via get_scanner_issues."
         ) {
+            api.logging().logToOutput("MCP start_active_audit: starting active audit for $targetUrl")
             api.scope().includeInScope(targetUrl)
 
             val crawlConfig = CrawlConfiguration.crawlConfiguration(targetUrl)
             api.scanner().startCrawl(crawlConfig)
+            api.logging().logToOutput("MCP start_active_audit: crawl started for $targetUrl")
 
             val auditConfig = AuditConfiguration.auditConfiguration(
                 BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
             )
             val audit = api.scanner().startAudit(auditConfig)
+            api.logging().logToOutput("MCP start_active_audit: audit started for $targetUrl")
             audit.addRequest(HttpRequest.httpRequestFromUrl(targetUrl))
+            api.logging().logToOutput("MCP start_active_audit: added initial audit request for $targetUrl")
 
             val targetHost = java.net.URI(targetUrl).host
             val seen = mutableSetOf<String>()
@@ -280,6 +288,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                             requestResponses = api.siteMap().requestResponses(),
                             targetHost = targetHost,
                             seen = seen,
+                            logging = api.logging(),
                         )
                     } catch (_: Exception) {
                     }
