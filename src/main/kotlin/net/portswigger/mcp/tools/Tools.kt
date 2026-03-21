@@ -8,10 +8,12 @@ import burp.api.montoya.core.BurpSuiteEdition
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
+import burp.api.montoya.http.message.HttpRequestResponse
 import burp.api.montoya.http.message.requests.HttpRequest
 import burp.api.montoya.scanner.AuditConfiguration
 import burp.api.montoya.scanner.BuiltInAuditConfiguration
 import burp.api.montoya.scanner.CrawlConfiguration
+import burp.api.montoya.scanner.audit.Audit
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -42,6 +44,24 @@ private fun truncateIfNeeded(serialized: String): String {
         serialized.substring(0, 5000) + "... (truncated)"
     } else {
         serialized
+    }
+}
+
+internal fun addMatchingResponsesToAudit(
+    audit: Audit,
+    requestResponses: List<HttpRequestResponse>,
+    targetHost: String,
+    seen: MutableSet<String>,
+) {
+    requestResponses.forEach { requestResponse ->
+        if (requestResponse.response() == null) {
+            return@forEach
+        }
+
+        val url = requestResponse.request().url()
+        if (url.contains(targetHost) && seen.add(url)) {
+            audit.addRequestResponse(requestResponse)
+        }
     }
 }
 
@@ -255,12 +275,12 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                 repeat(30) {
                     try {
                         Thread.sleep(2000)
-                        api.siteMap().requestResponses().forEach { requestResponse ->
-                            val url = requestResponse.request().url()
-                            if (url.contains(targetHost) && seen.add(url)) {
-                                audit.addRequestResponse(requestResponse)
-                            }
-                        }
+                        addMatchingResponsesToAudit(
+                            audit = audit,
+                            requestResponses = api.siteMap().requestResponses(),
+                            targetHost = targetHost,
+                            seen = seen,
+                        )
                     } catch (_: Exception) {
                     }
                 }

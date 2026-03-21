@@ -1027,6 +1027,26 @@ class ToolsKtTest {
             unmockkStatic(burp.api.montoya.scanner.CrawlConfiguration::class)
             unmockkStatic(burp.api.montoya.scanner.AuditConfiguration::class)
         }
+
+        @Test
+        fun `start active audit should skip site map entries without responses`() {
+            val audit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
+            val request = mockk<HttpRequest>()
+            val requestResponse = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+
+            every { requestResponse.request() } returns request
+            every { request.url() } returns "https://example.com/filter"
+            every { requestResponse.response() } returns null
+
+            addMatchingResponsesToAudit(
+                audit = audit,
+                requestResponses = listOf(requestResponse),
+                targetHost = "example.com",
+                seen = mutableSetOf(),
+            )
+
+            verify(exactly = 0) { audit.addRequestResponse(any<burp.api.montoya.http.message.HttpRequestResponse>()) }
+        }
     }
 
     @Test
