@@ -1003,6 +1003,7 @@ class ToolsKtTest {
         runBlocking {
             val tools = client.listTools()
             assertFalse(tools.any { it.name == "get_scanner_issues" })
+            assertFalse(tools.any { it.name == "start_active_audit" })
             assertFalse(tools.any { it.name == "generate_collaborator_payload" })
             assertFalse(tools.any { it.name == "get_collaborator_interactions" })
         }
@@ -1027,6 +1028,7 @@ class ToolsKtTest {
 
             val tools = client.listTools()
             assertTrue(tools.any { it.name == "get_scanner_issues" })
+            assertTrue(tools.any { it.name == "start_active_audit" })
             assertTrue(tools.any { it.name == "generate_collaborator_payload" })
             assertTrue(tools.any { it.name == "get_collaborator_interactions" })
         }

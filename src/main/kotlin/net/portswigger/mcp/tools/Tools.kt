@@ -9,6 +9,9 @@ import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.scanner.AuditConfiguration
+import burp.api.montoya.scanner.BuiltInAuditConfiguration
+import burp.api.montoya.scanner.CrawlConfiguration
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -229,6 +232,44 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                 }
             }
         }
+
+        mcpTool<StartActiveAudit>(
+            "Starts a Burp active scan (crawl + audit) against the target URL. " +
+            "The crawl discovers pages and the audit checks for vulnerabilities. " +
+            "Results can be retrieved later via get_scanner_issues."
+        ) {
+            api.scope().includeInScope(targetUrl)
+
+            val crawlConfig = CrawlConfiguration.crawlConfiguration(targetUrl)
+            api.scanner().startCrawl(crawlConfig)
+
+            val auditConfig = AuditConfiguration.auditConfiguration(
+                BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
+            )
+            val audit = api.scanner().startAudit(auditConfig)
+            audit.addRequest(HttpRequest.httpRequest(targetUrl))
+
+            val targetHost = java.net.URI(targetUrl).host
+            val seen = mutableSetOf<String>()
+            Thread {
+                repeat(30) {
+                    try {
+                        Thread.sleep(2000)
+                        api.siteMap().requestResponses().forEach { requestResponse ->
+                            val url = requestResponse.request().url()
+                            if (url.contains(targetHost) && seen.add(url)) {
+                                audit.addRequestResponse(requestResponse)
+                            }
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+            }.apply { isDaemon = true }.start()
+
+            "Active scan started for $targetUrl. " +
+            "Crawl discovering pages; audit checking for vulnerabilities. " +
+            "Use get_scanner_issues to retrieve findings (allow 30-60s for results)."
+        }
     }
 
     mcpPaginatedTool<GetProxyHttpHistory>("Displays items within the proxy HTTP history") {
@@ -427,3 +468,6 @@ data class GenerateCollaboratorPayload(
 data class GetCollaboratorInteractions(
     val payloadId: String? = null
 )
+
+@Serializable
+data class StartActiveAudit(val targetUrl: String)
