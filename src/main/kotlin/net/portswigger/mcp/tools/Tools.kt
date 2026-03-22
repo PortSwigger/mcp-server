@@ -10,6 +10,7 @@ import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.HttpRequestResponse
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.http.message.responses.HttpResponse
 import burp.api.montoya.logging.Logging
 import burp.api.montoya.scanner.AuditConfiguration
 import burp.api.montoya.scanner.BuiltInAuditConfiguration
@@ -27,6 +28,51 @@ import net.portswigger.mcp.security.HttpRequestSecurity
 import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
 import javax.swing.JTextArea
+
+private data class FocusedAuditTarget(
+    val uri: java.net.URI,
+    val host: String,
+    val port: Int,
+    val usesHttps: Boolean,
+)
+
+private fun parseFocusedAuditTarget(targetUrl: String): FocusedAuditTarget {
+    val uri = java.net.URI(targetUrl)
+    val scheme = uri.scheme?.lowercase() ?: throw IllegalArgumentException("targetUrl must include a scheme")
+    val host = uri.host ?: throw IllegalArgumentException("targetUrl must include a host")
+    val usesHttps = when (scheme) {
+        "https" -> true
+        "http" -> false
+        else -> throw IllegalArgumentException("targetUrl scheme must be http or https")
+    }
+    val port = if (uri.port != -1) uri.port else if (usesHttps) 443 else 80
+    return FocusedAuditTarget(uri, host, port, usesHttps)
+}
+
+private fun validateFocusedAuditRequest(target: FocusedAuditTarget, request: String) {
+    if (request.isBlank()) {
+        throw IllegalArgumentException("request must not be blank")
+    }
+
+    val lines = request.replace("\r\n", "\n").split('\n')
+    if (lines.isEmpty() || lines.first().isBlank()) {
+        throw IllegalArgumentException("request must include a request line")
+    }
+
+    val hostHeader = lines
+        .drop(1)
+        .takeWhile { it.isNotEmpty() }
+        .firstOrNull { it.startsWith("Host:", ignoreCase = true) }
+        ?.substringAfter(':')
+        ?.trim()
+
+    if (hostHeader != null) {
+        val requestHost = hostHeader.substringBefore(':').trim()
+        if (!requestHost.equals(target.host, ignoreCase = true)) {
+            throw IllegalArgumentException("request host must match targetUrl host")
+        }
+    }
+}
 
 private suspend fun checkHistoryPermissionOrDeny(
     accessType: HistoryAccessType, config: McpConfig, api: MontoyaApi, logMessage: String
@@ -299,6 +345,37 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             "Crawl discovering pages; audit checking for vulnerabilities. " +
             "Use get_scanner_issues to retrieve findings (allow 30-60s for results)."
         }
+
+        mcpTool<StartActiveAuditForRequest>(
+            "Starts a focused Burp active audit for a specific HTTP request. " +
+            "This tool does not start a crawl. Results can be retrieved later via get_scanner_issues."
+        ) {
+            val target = parseFocusedAuditTarget(targetUrl)
+            validateFocusedAuditRequest(target, request)
+            api.logging().logToOutput("MCP start_active_audit_for_request: starting focused audit for $targetUrl")
+            api.scope().includeInScope(targetUrl)
+
+            val auditConfig = AuditConfiguration.auditConfiguration(
+                BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
+            )
+            val audit = api.scanner().startAudit(auditConfig)
+            api.logging().logToOutput("MCP start_active_audit_for_request: audit started for $targetUrl")
+
+            val service = HttpService.httpService(target.host, target.port, target.usesHttps)
+            val httpRequest = HttpRequest.httpRequest(service, request)
+
+            if (response != null) {
+                val httpResponse = HttpResponse.httpResponse(response)
+                val requestResponse = HttpRequestResponse.httpRequestResponse(httpRequest, httpResponse)
+                audit.addRequestResponse(requestResponse)
+                api.logging().logToOutput("MCP start_active_audit_for_request: injected request-response for $targetUrl")
+            } else {
+                audit.addRequest(httpRequest)
+                api.logging().logToOutput("MCP start_active_audit_for_request: injected request for $targetUrl")
+            }
+
+            "Focused active audit started for $targetUrl. No crawl was started. Use get_scanner_issues to retrieve findings."
+        }
     }
 
     mcpPaginatedTool<GetProxyHttpHistory>("Displays items within the proxy HTTP history") {
@@ -500,3 +577,10 @@ data class GetCollaboratorInteractions(
 
 @Serializable
 data class StartActiveAudit(val targetUrl: String)
+
+@Serializable
+data class StartActiveAuditForRequest(
+    val targetUrl: String,
+    val request: String,
+    val response: String? = null
+)

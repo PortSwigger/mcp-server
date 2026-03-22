@@ -1033,6 +1033,169 @@ class ToolsKtTest {
         }
 
         @Test
+        fun `start active audit for request should start focused audit without crawl`() {
+            val scanner = mockk<burp.api.montoya.scanner.Scanner>()
+            val scope = mockk<burp.api.montoya.scope.Scope>(relaxed = true)
+            val audit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
+            val auditConfig = mockk<burp.api.montoya.scanner.AuditConfiguration>()
+            val httpRequest = mockk<HttpRequest>()
+
+            mockkStatic(burp.api.montoya.scanner.AuditConfiguration::class)
+
+            every { api.scope() } returns scope
+            every { api.scanner() } returns scanner
+            every {
+                burp.api.montoya.scanner.AuditConfiguration.auditConfiguration(
+                    burp.api.montoya.scanner.BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
+                )
+            } returns auditConfig
+            every { scanner.startAudit(auditConfig) } returns audit
+            every { HttpRequest.httpRequest(any<burp.api.montoya.http.HttpService>(), any<String>()) } returns httpRequest
+
+            runBlocking {
+                val result = client.callTool(
+                    "start_active_audit_for_request",
+                    mapOf(
+                        "targetUrl" to "http://example.com:8080/login",
+                        "request" to "POST /login HTTP/1.1\r\nHost: example.com:8080\r\nContent-Length: 10\r\n\r\nusername=a"
+                    )
+                )
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("Focused active audit started"))
+                assertTrue(text.contains("http://example.com:8080/login"))
+                assertFalse(text.contains("Error"))
+            }
+
+            verify(exactly = 1) { scope.includeInScope("http://example.com:8080/login") }
+            verify(exactly = 1) { burp.api.montoya.http.HttpService.httpService("example.com", 8080, false) }
+            verify(exactly = 1) { scanner.startAudit(auditConfig) }
+            verify(exactly = 1) { audit.addRequest(httpRequest) }
+            verify(exactly = 0) { scanner.startCrawl(any()) }
+            verify { api.logging().logToOutput(match { it.contains("start_active_audit_for_request") }) }
+
+            unmockkStatic(burp.api.montoya.scanner.AuditConfiguration::class)
+        }
+
+        @Test
+        fun `start active audit for request should seed audit with request response when response is provided`() {
+            val scanner = mockk<burp.api.montoya.scanner.Scanner>()
+            val scope = mockk<burp.api.montoya.scope.Scope>(relaxed = true)
+            val audit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
+            val auditConfig = mockk<burp.api.montoya.scanner.AuditConfiguration>()
+            val httpRequest = mockk<HttpRequest>()
+            val httpResponse = mockk<burp.api.montoya.http.message.responses.HttpResponse>()
+            val requestResponse = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+
+            mockkStatic(burp.api.montoya.scanner.AuditConfiguration::class)
+            mockkStatic(burp.api.montoya.http.message.responses.HttpResponse::class)
+            mockkStatic(burp.api.montoya.http.message.HttpRequestResponse::class)
+
+            every { api.scope() } returns scope
+            every { api.scanner() } returns scanner
+            every {
+                burp.api.montoya.scanner.AuditConfiguration.auditConfiguration(
+                    burp.api.montoya.scanner.BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
+                )
+            } returns auditConfig
+            every { scanner.startAudit(auditConfig) } returns audit
+            every { HttpRequest.httpRequest(any<burp.api.montoya.http.HttpService>(), any<String>()) } returns httpRequest
+            every { burp.api.montoya.http.message.responses.HttpResponse.httpResponse(any<String>()) } returns httpResponse
+            every { burp.api.montoya.http.message.HttpRequestResponse.httpRequestResponse(httpRequest, httpResponse) } returns requestResponse
+
+            runBlocking {
+                val result = client.callTool(
+                    "start_active_audit_for_request",
+                    mapOf(
+                        "targetUrl" to "https://example.com/login",
+                        "request" to "POST /login HTTP/1.1\r\nHost: example.com\r\n\r\nusername=a",
+                        "response" to "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nok"
+                    )
+                )
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("Focused active audit started"), "Expected success but got: $text")
+                assertFalse(text.contains("Error"), "Unexpected error: $text")
+            }
+
+            verify(exactly = 1) { audit.addRequestResponse(requestResponse) }
+            verify(exactly = 0) { audit.addRequest(any()) }
+
+            unmockkStatic(burp.api.montoya.scanner.AuditConfiguration::class)
+            unmockkStatic(burp.api.montoya.http.message.responses.HttpResponse::class)
+            unmockkStatic(burp.api.montoya.http.message.HttpRequestResponse::class)
+        }
+
+        @Test
+        fun `start active audit for request should reject invalid targetUrl without scheme`() {
+            val scanner = mockk<burp.api.montoya.scanner.Scanner>()
+            every { api.scanner() } returns scanner
+
+            runBlocking {
+                val result = client.callTool(
+                    "start_active_audit_for_request",
+                    mapOf(
+                        "targetUrl" to "example.com/login",
+                        "request" to "GET /login HTTP/1.1\r\nHost: example.com\r\n\r\n"
+                    )
+                )
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("Error:"), "Expected error response but got: $text")
+                assertTrue(text.contains("targetUrl must include a scheme") || text.contains("targetUrl must include a host"),
+                    "Expected validation message but got: $text")
+            }
+
+            verify(exactly = 0) { scanner.startAudit(any()) }
+        }
+
+        @Test
+        fun `start active audit for request should reject blank request`() {
+            val scanner = mockk<burp.api.montoya.scanner.Scanner>()
+            every { api.scanner() } returns scanner
+
+            runBlocking {
+                val result = client.callTool(
+                    "start_active_audit_for_request",
+                    mapOf(
+                        "targetUrl" to "https://example.com/login",
+                        "request" to "   "
+                    )
+                )
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("Error:"), "Expected error response but got: $text")
+                assertTrue(text.contains("request must not be blank"), "Expected blank validation but got: $text")
+            }
+
+            verify(exactly = 0) { scanner.startAudit(any()) }
+        }
+
+        @Test
+        fun `start active audit for request should reject host mismatch`() {
+            val scanner = mockk<burp.api.montoya.scanner.Scanner>()
+            val scope = mockk<burp.api.montoya.scope.Scope>(relaxed = true)
+            every { api.scanner() } returns scanner
+            every { api.scope() } returns scope
+
+            runBlocking {
+                val result = client.callTool(
+                    "start_active_audit_for_request",
+                    mapOf(
+                        "targetUrl" to "https://example.com/login",
+                        "request" to "POST /login HTTP/1.1\r\nHost: other.example\r\n\r\nusername=a"
+                    )
+                )
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("Error:"), "Expected error response but got: $text")
+                assertTrue(text.contains("request host must match targetUrl host"), "Expected host mismatch error but got: $text")
+            }
+
+            verify(exactly = 0) { scanner.startAudit(any()) }
+        }
+
+        @Test
         fun `start active audit should skip site map entries without responses`() {
             val audit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
             val request = mockk<HttpRequest>()
@@ -1078,6 +1241,7 @@ class ToolsKtTest {
             assertFalse(tools.any { it.name == "start_active_audit" })
             assertFalse(tools.any { it.name == "generate_collaborator_payload" })
             assertFalse(tools.any { it.name == "get_collaborator_interactions" })
+            assertFalse(tools.any { it.name == "start_active_audit_for_request" })
         }
 
         every { version.edition() } returns BurpSuiteEdition.PROFESSIONAL
@@ -1101,6 +1265,7 @@ class ToolsKtTest {
             val tools = client.listTools()
             assertTrue(tools.any { it.name == "get_scanner_issues" })
             assertTrue(tools.any { it.name == "start_active_audit" })
+            assertTrue(tools.any { it.name == "start_active_audit_for_request" })
             assertTrue(tools.any { it.name == "generate_collaborator_payload" })
             assertTrue(tools.any { it.name == "get_collaborator_interactions" })
         }
