@@ -362,7 +362,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             api.logging().logToOutput("MCP start_active_audit_for_request: audit started for $targetUrl")
 
             val service = HttpService.httpService(target.host, target.port, target.usesHttps)
-            val httpRequest = HttpRequest.httpRequest(service, request)
+            val fixedRequest = request.replace("\r", "").replace("\n", "\r\n")
+            val httpRequest = HttpRequest.httpRequest(service, fixedRequest)
 
             if (response != null) {
                 val httpResponse = HttpResponse.httpResponse(response)
