@@ -7,6 +7,15 @@ import burp.api.montoya.scanner.audit.issues.AuditIssue
 import burp.api.montoya.websocket.Direction
 import kotlinx.serialization.Serializable
 
+private fun truncateResponseToHeaders(raw: String?): String {
+    if (raw == null) return "<no response>"
+    val separator = raw.indexOf("\r\n\r\n")
+    if (separator != -1) return raw.substring(0, separator)
+    val lfSeparator = raw.indexOf("\n\n")
+    if (lfSeparator != -1) return raw.substring(0, lfSeparator)
+    return raw
+}
+
 fun AuditIssue.toSerializableForm(): IssueDetails {
     return IssueDetails(
         name = name(),
@@ -20,7 +29,13 @@ fun AuditIssue.toSerializableForm(): IssueDetails {
         baseUrl = baseUrl(),
         severity = AuditIssueSeverity.valueOf(severity().name),
         confidence = AuditIssueConfidence.valueOf(confidence().name),
-        requestResponses = requestResponses().map { it.toSerializableForm() },
+        requestResponses = requestResponses().map {
+            HttpRequestResponse(
+                request = it.request()?.toString() ?: "<no request>",
+                response = truncateResponseToHeaders(it.response()?.toString()),
+                notes = it.annotations().notes()
+            )
+        },
         collaboratorInteractions = collaboratorInteractions().map {
             Interaction(
                 interactionId = it.id().toString(),

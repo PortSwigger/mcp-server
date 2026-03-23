@@ -304,9 +304,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         mcpTool<StartActiveAudit>(
-            "Starts a Burp active scan (crawl + audit) against the target URL. " +
-            "The crawl discovers pages and the audit checks for vulnerabilities. " +
-            "Results can be retrieved later via get_scanner_issues."
+            "Starts a Burp active scan (crawl + audit) for the target URL. " +
+            "Use get_scanner_issues to retrieve findings."
         ) {
             api.logging().logToOutput("MCP start_active_audit: starting active audit for $targetUrl")
             api.scope().includeInScope(targetUrl)
@@ -341,14 +340,12 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                 }
             }.apply { isDaemon = true }.start()
 
-            "Active scan started for $targetUrl. " +
-            "Crawl discovering pages; audit checking for vulnerabilities. " +
-            "Use get_scanner_issues to retrieve findings (allow 30-60s for results)."
+            "Active scan started for $targetUrl. Use get_scanner_issues to retrieve findings."
         }
 
         mcpTool<StartActiveAuditForRequest>(
             "Starts a focused Burp active audit for a specific HTTP request. " +
-            "This tool does not start a crawl. Results can be retrieved later via get_scanner_issues."
+            "Use get_scanner_issues to retrieve findings."
         ) {
             val target = parseFocusedAuditTarget(targetUrl)
             validateFocusedAuditRequest(target, request)
