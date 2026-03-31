@@ -4,6 +4,8 @@ import burp.api.montoya.MontoyaApi
 import burp.api.montoya.burpsuite.TaskExecutionEngine
 import burp.api.montoya.collaborator.*
 import burp.api.montoya.core.BurpSuiteEdition
+import burp.api.montoya.scanner.AuditConfiguration
+import burp.api.montoya.scanner.CrawlConfiguration
 import burp.api.montoya.core.ByteArray
 import burp.api.montoya.http.Http
 import burp.api.montoya.http.HttpMode
@@ -125,6 +127,23 @@ class ToolsKtTest {
                 every { it.port() } returns port
                 every { it.secure() } returns secure
             }
+        }
+    }
+
+    private fun mockSiteMapRequestResponse(
+        url: String,
+        method: String = "GET",
+    ): burp.api.montoya.http.message.HttpRequestResponse {
+        val request = mockk<burp.api.montoya.http.message.requests.HttpRequest>()
+        every { request.url() } returns url
+        every { request.method() } returns method
+
+        val response = mockk<burp.api.montoya.http.message.responses.HttpResponse>()
+        every { response.toString() } returns "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nok"
+
+        return mockk {
+            every { request() } returns request
+            every { response() } returns response
         }
     }
     
@@ -981,6 +1000,293 @@ class ToolsKtTest {
                 delay(100)
                 result.expectTextContent("No interactions detected")
             }
+        }
+    }
+
+    @Nested
+    inner class ActiveAuditToolsTests {
+        private val scanner = mockk<burp.api.montoya.scanner.Scanner>(relaxed = true)
+
+        @BeforeEach
+        fun setupProfessional() {
+            val burpSuite = mockk<burp.api.montoya.burpsuite.BurpSuite>()
+            val version = mockk<burp.api.montoya.core.Version>()
+            every { api.burpSuite() } returns burpSuite
+            every { burpSuite.version() } returns version
+            every { version.edition() } returns BurpSuiteEdition.PROFESSIONAL
+            every { burpSuite.taskExecutionEngine() } returns mockk(relaxed = true)
+            every { burpSuite.exportProjectOptionsAsJson() } returns "{}"
+            every { burpSuite.exportUserOptionsAsJson() } returns "{}"
+            every { burpSuite.importProjectOptionsFromJson(any()) } just runs
+            every { burpSuite.importUserOptionsFromJson(any()) } just runs
+            every { api.scanner() } returns scanner
+
+            serverManager.stop {}
+            serverStarted = false
+            serverManager.start(config) { state ->
+                if (state is ServerState.Running) serverStarted = true
+            }
+
+            runBlocking {
+                var attempts = 0
+                while (!serverStarted && attempts < 30) {
+                    delay(100)
+                    attempts++
+                }
+                if (!serverStarted) throw IllegalStateException("Server failed to start after timeout")
+                client.connectToServer("http://127.0.0.1:${testPort}")
+            }
+        }
+
+        @Test
+        fun `stop_active_audit tool should be registered in professional edition`() {
+            runBlocking {
+                val tools = client.listTools()
+                assertTrue(tools.any { it.name == "stop_active_audit" })
+            }
+        }
+
+        @Test
+        fun `start_active_audit should make scanDurationSeconds optional`() {
+            runBlocking {
+                val tool = client.listTools().single { it.name == "start_active_audit" }
+                assertFalse(tool.inputSchema.required?.contains("scanDurationSeconds") ?: false)
+            }
+        }
+
+        @Test
+        fun `stop all audits should return count`() {
+            runBlocking {
+                val result = client.callTool("stop_active_audit", emptyMap())
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("0"), "Should report 0 stopped when none running")
+            }
+        }
+
+        @Test
+        fun `stop with invalid audit ID should return not found`() {
+            runBlocking {
+                val result = client.callTool(
+                    "stop_active_audit", mapOf(
+                        "auditId" to "audit-999"
+                    )
+                )
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("not found"), "Should report not found for invalid ID")
+            }
+        }
+
+        @Test
+        fun `start then stop by ID should delete the task`() {
+            val mockCrawl = mockk<burp.api.montoya.scanner.Crawl>(relaxed = true)
+            val mockAudit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
+            val mockScope = mockk<burp.api.montoya.sitemap.SiteMap>(relaxed = true)
+            val mockScopeTarget = mockk<burp.api.montoya.scope.Scope>(relaxed = true)
+
+            every { scanner.startCrawl(any()) } returns mockCrawl
+            every { scanner.startAudit(any()) } returns mockAudit
+            every { api.siteMap() } returns mockScope
+            every { api.scope() } returns mockScopeTarget
+            every { mockScopeTarget.isInScope(any()) } returns false
+
+            mockkStatic(CrawlConfiguration::class)
+            mockkStatic(AuditConfiguration::class)
+            mockkStatic(HttpRequest::class)
+            every { CrawlConfiguration.crawlConfiguration(any<String>()) } returns mockk(relaxed = true)
+            every { AuditConfiguration.auditConfiguration(any()) } returns mockk(relaxed = true)
+            every { HttpRequest.httpRequestFromUrl(any<String>()) } returns mockk(relaxed = true)
+
+            runBlocking {
+                val startResult = client.callTool(
+                    "start_active_audit", mapOf(
+                        "targetUrl" to "https://example.com",
+                        "scanDurationSeconds" to 300
+                    )
+                )
+                delay(100)
+                val startText = startResult.expectTextContent()
+                assertTrue(startText.contains("auditId:"), "Should contain auditId")
+
+                val auditId = Regex("auditId: (audit-\\d+)").find(startText)!!.groupValues[1]
+
+                val stopResult = client.callTool(
+                    "stop_active_audit", mapOf(
+                        "auditId" to auditId
+                    )
+                )
+                delay(100)
+                val stopText = stopResult.expectTextContent()
+                assertTrue(stopText.contains("Stopped"), "Should confirm stopped")
+            }
+
+            verify { mockCrawl.delete() }
+            verify { mockAudit.delete() }
+            verify { mockScopeTarget.includeInScope("https://example.com") }
+            verify { mockScopeTarget.excludeFromScope("https://example.com") }
+
+            unmockkStatic(CrawlConfiguration::class)
+            unmockkStatic(AuditConfiguration::class)
+        }
+
+        @Test
+        fun `start_active_audit should reject non-positive scan duration`() {
+            runBlocking {
+                val result = client.callTool(
+                    "start_active_audit", mapOf(
+                        "targetUrl" to "https://example.com",
+                        "scanDurationSeconds" to 0
+                    )
+                )
+                delay(100)
+                assertTrue(result?.isError == true)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("scanDurationSeconds must be greater than 0"))
+            }
+        }
+
+        @Test
+        fun `start_active_audit should only add site map items within target scheme host port and path scope`() {
+            val mockCrawl = mockk<burp.api.montoya.scanner.Crawl>(relaxed = true)
+            val mockAudit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
+            val mockSiteMap = mockk<burp.api.montoya.sitemap.SiteMap>(relaxed = true)
+            val mockScope = mockk<burp.api.montoya.scope.Scope>(relaxed = true)
+            val addedRequestResponses = mutableListOf<burp.api.montoya.http.message.HttpRequestResponse>()
+
+            every { scanner.startCrawl(any()) } returns mockCrawl
+            every { scanner.startAudit(any()) } returns mockAudit
+            every { api.siteMap() } returns mockSiteMap
+            every { api.scope() } returns mockScope
+            every { mockScope.isInScope(any()) } returns false
+            every { mockSiteMap.requestResponses() } returns listOf(
+                mockSiteMapRequestResponse("https://example.com/app"),
+                mockSiteMapRequestResponse("https://example.com/app/users"),
+                mockSiteMapRequestResponse("https://example.com/app2"),
+                mockSiteMapRequestResponse("https://example.com:8443/app/admin"),
+                mockSiteMapRequestResponse("http://example.com/app")
+            )
+            every { mockAudit.addRequestResponse(capture(addedRequestResponses)) } just runs
+
+            mockkStatic(CrawlConfiguration::class)
+            mockkStatic(AuditConfiguration::class)
+            every { CrawlConfiguration.crawlConfiguration(any<String>()) } returns mockk(relaxed = true)
+            every { AuditConfiguration.auditConfiguration(any()) } returns mockk(relaxed = true)
+            every { HttpRequest.httpRequestFromUrl(any<String>()) } returns mockk(relaxed = true)
+
+            runBlocking {
+                val startResult = client.callTool(
+                    "start_active_audit", mapOf(
+                        "targetUrl" to "https://example.com/app",
+                        "scanDurationSeconds" to 2
+                    )
+                )
+                delay(2400)
+                val startText = startResult.expectTextContent()
+                val auditId = Regex("auditId: (audit-\\d+)").find(startText)!!.groupValues[1]
+
+                val stopResult = client.callTool(
+                    "stop_active_audit", mapOf(
+                        "auditId" to auditId
+                    )
+                )
+                delay(100)
+                stopResult.expectTextContent()
+            }
+
+            assertEquals(
+                setOf(
+                    "https://example.com/app",
+                    "https://example.com/app/users",
+                ),
+                addedRequestResponses.map { it.request().url() }.toSet()
+            )
+
+            unmockkStatic(CrawlConfiguration::class)
+            unmockkStatic(AuditConfiguration::class)
+        }
+
+        @Test
+        fun `start_active_audit should stop crawl and audit after timeout and roll back scope`() {
+            val mockCrawl = mockk<burp.api.montoya.scanner.Crawl>(relaxed = true)
+            val mockAudit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
+            val mockSiteMap = mockk<burp.api.montoya.sitemap.SiteMap>(relaxed = true)
+            val mockScope = mockk<burp.api.montoya.scope.Scope>(relaxed = true)
+
+            every { scanner.startCrawl(any()) } returns mockCrawl
+            every { scanner.startAudit(any()) } returns mockAudit
+            every { api.siteMap() } returns mockSiteMap
+            every { api.scope() } returns mockScope
+            every { mockScope.isInScope(any()) } returns false
+            every { mockSiteMap.requestResponses() } returns emptyList()
+
+            mockkStatic(CrawlConfiguration::class)
+            mockkStatic(AuditConfiguration::class)
+            every { CrawlConfiguration.crawlConfiguration(any<String>()) } returns mockk(relaxed = true)
+            every { AuditConfiguration.auditConfiguration(any()) } returns mockk(relaxed = true)
+            every { HttpRequest.httpRequestFromUrl(any<String>()) } returns mockk(relaxed = true)
+
+            try {
+                runBlocking {
+                    val startResult = client.callTool(
+                        "start_active_audit", mapOf(
+                            "targetUrl" to "https://example.com/app",
+                            "scanDurationSeconds" to 2
+                        )
+                    )
+                    delay(100)
+                    startResult.expectTextContent()
+                    delay(2400)
+                }
+
+                verify(timeout = 500) { mockAudit.delete() }
+                verify(timeout = 500) { mockCrawl.delete() }
+                verify { mockScope.includeInScope("https://example.com/app") }
+                verify(timeout = 500) { mockScope.excludeFromScope("https://example.com/app") }
+            } finally {
+                unmockkStatic(CrawlConfiguration::class)
+                unmockkStatic(AuditConfiguration::class)
+            }
+        }
+
+        @Test
+        fun `start_active_audit_for_request should roll back scope when stopped`() {
+            val mockAudit = mockk<burp.api.montoya.scanner.audit.Audit>(relaxed = true)
+            val mockScope = mockk<burp.api.montoya.scope.Scope>(relaxed = true)
+            val mockAuditRequest = mockk<HttpRequest>(relaxed = true)
+
+            every { scanner.startAudit(any()) } returns mockAudit
+            every { api.scope() } returns mockScope
+            every { mockScope.isInScope(any()) } returns false
+
+            mockkStatic(AuditConfiguration::class)
+            every { AuditConfiguration.auditConfiguration(any()) } returns mockk(relaxed = true)
+            every { HttpRequest.httpRequest(any(), any<String>()) } returns mockAuditRequest
+
+            runBlocking {
+                val startResult = client.callTool(
+                    "start_active_audit_for_request", mapOf(
+                        "targetUrl" to "https://example.com/app",
+                        "request" to "GET /app HTTP/1.1\r\nHost: example.com\r\n\r\n"
+                    )
+                )
+                delay(100)
+                val startText = startResult.expectTextContent()
+                val auditId = Regex("auditId: (audit-\\d+)").find(startText)!!.groupValues[1]
+
+                val stopResult = client.callTool(
+                    "stop_active_audit", mapOf(
+                        "auditId" to auditId
+                    )
+                )
+                delay(100)
+                stopResult.expectTextContent()
+            }
+
+            verify { mockScope.includeInScope("https://example.com/app") }
+            verify { mockScope.excludeFromScope("https://example.com/app") }
+
+            unmockkStatic(AuditConfiguration::class)
         }
     }
 

@@ -63,6 +63,7 @@ class SwingUserApprovalHandler : UserApprovalHandler {
 object HttpRequestSecurity {
 
     var approvalHandler: UserApprovalHandler = SwingUserApprovalHandler()
+    var auditApprovalHandler: UserApprovalHandler = AuditSwingUserApprovalHandler()
 
     private fun isAutoApproved(hostname: String, port: Int, config: McpConfig): Boolean {
         val target = "$hostname:$port"
@@ -116,5 +117,19 @@ object HttpRequestSecurity {
         }
 
         return approvalHandler.requestApproval(hostname, port, config, requestContent, api)
+    }
+
+    suspend fun checkAuditPermission(
+        hostname: String, port: Int, config: McpConfig, api: MontoyaApi? = null
+    ): Boolean {
+        if (!config.requireHttpRequestApproval) {
+            return true
+        }
+
+        if (isAutoApproved(hostname, port, config)) {
+            return true
+        }
+
+        return auditApprovalHandler.requestApproval(hostname, port, config, null, api)
     }
 }
