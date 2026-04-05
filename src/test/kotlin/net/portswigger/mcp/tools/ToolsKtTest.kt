@@ -757,8 +757,102 @@ class ToolsKtTest {
                 assertEquals("Reached end of items", result3.expectTextContent())
             }
         }
+
+        @Test
+        fun `get proxy history with newestFirst should return items in reverse order`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+
+            every { proxyHistory[0].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /oldest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Oldest"
+            )
+            every { proxyHistory[1].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /middle HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Middle"
+            )
+            every { proxyHistory[2].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /newest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Newest"
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history", mapOf(
+                        "count" to 2,
+                        "offset" to 0,
+                        "newestFirst" to true
+                    )
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("GET /newest"), "First item should be newest")
+                assertTrue(text.contains("GET /middle"), "Second item should be middle")
+                assertFalse(text.contains("GET /oldest"), "Oldest should not be in first page")
+            }
+        }
+
+        @Test
+        fun `get proxy history with newestFirst false should return items in original order`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+
+            every { proxyHistory[0].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /oldest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Oldest"
+            )
+            every { proxyHistory[1].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /middle HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Middle"
+            )
+            every { proxyHistory[2].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /newest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Newest"
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history", mapOf(
+                        "count" to 2,
+                        "offset" to 0,
+                        "newestFirst" to false
+                    )
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("GET /oldest"), "First item should be oldest")
+                assertTrue(text.contains("GET /middle"), "Second item should be middle")
+                assertFalse(text.contains("GET /newest"), "Newest should not be in first page")
+            }
+        }
     }
-    
+
     @Nested
     inner class CollaboratorToolsTests {
         private val collaborator = mockk<Collaborator>()
