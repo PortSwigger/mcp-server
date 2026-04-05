@@ -285,6 +285,23 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         ordered.asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
+    mcpTool<GetProxyHttpHistoryCount>("Returns the total number of items in the proxy HTTP history, optionally filtered by regex") {
+        val allowed = runBlocking {
+            checkHistoryPermissionOrDeny(HistoryAccessType.HTTP_HISTORY, config, api, "HTTP history count")
+        }
+        if (!allowed) {
+            return@mcpTool "HTTP history access denied by Burp Suite"
+        }
+
+        val history = if (regex != null) {
+            val compiledRegex = Pattern.compile(regex)
+            api.proxy().history { it.contains(compiledRegex) }
+        } else {
+            api.proxy().history()
+        }
+        history.size.toString()
+    }
+
     mcpTool<SetTaskExecutionEngineState>("Sets the state of Burp's task execution engine (paused or unpaused)") {
         api.burpSuite().taskExecutionEngine().state = if (running) RUNNING else PAUSED
 
@@ -422,6 +439,9 @@ data class GetProxyWebsocketHistory(override val count: Int, override val offset
 @Serializable
 data class GetProxyWebsocketHistoryRegex(val regex: String, override val count: Int, override val offset: Int, val newestFirst: Boolean = false) :
     Paginated
+
+@Serializable
+data class GetProxyHttpHistoryCount(val regex: String? = null)
 
 @Serializable
 data class GenerateCollaboratorPayload(

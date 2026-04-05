@@ -854,6 +854,60 @@ class ToolsKtTest {
     }
 
     @Nested
+    inner class HistoryCountToolsTests {
+        @Test
+        fun `get proxy http history count should return total count`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history_count", mapOf<String, Any>()
+                )
+
+                delay(100)
+                result.expectTextContent("3")
+            }
+        }
+
+        @Test
+        fun `get proxy http history count with regex should return filtered count`() {
+            val proxy = mockk<Proxy>()
+            val fullHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+            val filteredHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns fullHistory
+            every { proxy.history(any()) } returns filteredHistory
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history_count", mapOf(
+                        "regex" to "example\\.com"
+                    )
+                )
+
+                delay(100)
+                result.expectTextContent("2")
+            }
+        }
+    }
+
+    @Nested
     inner class CollaboratorToolsTests {
         private val collaborator = mockk<Collaborator>()
         private val collaboratorClient = mockk<CollaboratorClient>()
