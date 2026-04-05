@@ -14,6 +14,7 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import burp.api.montoya.proxy.Proxy
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
+import burp.api.montoya.proxy.ProxyWebSocketMessage
 import burp.api.montoya.utilities.Base64Utils
 import burp.api.montoya.utilities.RandomUtils
 import burp.api.montoya.utilities.URLUtils
@@ -903,6 +904,55 @@ class ToolsKtTest {
 
                 delay(100)
                 result.expectTextContent("2")
+            }
+        }
+
+        @Test
+        fun `get proxy websocket history count should return total count`() {
+            val proxy = mockk<Proxy>()
+            val wsHistory = listOf(
+                mockk<ProxyWebSocketMessage>(),
+                mockk<ProxyWebSocketMessage>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.webSocketHistory() } returns wsHistory
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_websocket_history_count", mapOf<String, Any>()
+                )
+
+                delay(100)
+                result.expectTextContent("2")
+            }
+        }
+
+        @Test
+        fun `get proxy websocket history count with regex should return filtered count`() {
+            val proxy = mockk<Proxy>()
+            val fullHistory = listOf(
+                mockk<ProxyWebSocketMessage>(),
+                mockk<ProxyWebSocketMessage>(),
+                mockk<ProxyWebSocketMessage>()
+            )
+            val filteredHistory = listOf(
+                mockk<ProxyWebSocketMessage>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.webSocketHistory() } returns fullHistory
+            every { proxy.webSocketHistory(any()) } returns filteredHistory
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_websocket_history_count", mapOf(
+                        "regex" to "ws://example"
+                    )
+                )
+
+                delay(100)
+                result.expectTextContent("1")
             }
         }
     }
