@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
 import net.portswigger.mcp.schema.asInputSchema
 import kotlin.experimental.ExperimentalTypeInference
+import kotlin.math.ceil
 
 @OptIn(InternalSerializationApi::class)
 inline fun <reified I : Any> Server.mcpTool(
@@ -108,6 +109,48 @@ inline fun <reified I : Paginated> Server.mcpPaginatedTool(
     })
 }
 
+/**
+ * Variant of mcpPaginatedTool for tools that return a single (potentially large) string.
+ *
+ * Here, [offset] is a **byte offset** into the response and [count] is the **maximum number
+ * of bytes** to return in this page. The caller (Claude) should start with offset=0 and keep
+ * calling with offset += count until it receives a page whose length is less than count, or
+ * it receives the "Reached end of response" message.
+ *
+ * A safe default page size is 800 000 bytes, which stays well under the 1 MB MCP tool-result
+ * limit even after JSON encoding overhead.
+ */
+inline fun <reified I : Paginated> Server.mcpPaginatedBytesTool(
+    description: String,
+    crossinline execute: I.() -> String
+) {
+    mcpTool<I>(description, execute = {
+        val full = execute(this)
+        val bytes = full.toByteArray(Charsets.UTF_8)
+        val totalBytes = bytes.size
+
+        if (offset >= totalBytes) {
+            val totalPages = ceil(totalBytes.toDouble() / count).toInt().coerceAtLeast(1)
+            "Reached end of response (total bytes: $totalBytes, total pages at this page size: $totalPages)"
+        } else {
+            val end = (offset + count).coerceAtMost(totalBytes)
+            val chunk = bytes.sliceArray(offset until end).toString(Charsets.UTF_8)
+            val remaining = totalBytes - end
+            val totalPages = ceil(totalBytes.toDouble() / count).toInt()
+            val currentPage = ceil(end.toDouble() / count).toInt()
+
+            buildString {
+                appendLine("=== Page $currentPage of $totalPages | bytes $offset–$end of $totalBytes | ${if (remaining > 0) "$remaining bytes remaining" else "last page"} ===")
+                if (remaining > 0) {
+                    appendLine("Call again with offset=$end to get the next page.")
+                }
+                appendLine()
+                append(chunk)
+            }
+        }
+    })
+}
+
 @OptIn(ExperimentalTypeInference::class)
 @OverloadResolutionByLambdaReturnType
 @JvmName("mcpNamedToolString")
@@ -157,4 +200,3 @@ interface Paginated {
     val count: Int
     val offset: Int
 }
-
