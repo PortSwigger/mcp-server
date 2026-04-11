@@ -75,7 +75,9 @@ class ClaudeDesktopProvider(private val logging: Logging, private val proxyJarMa
             else -> return null
         }
 
-        if (!basePath.exists()) return null
+        if (!basePath.exists()) {
+            basePath.toFile().mkdirs()
+        }
 
         val configFile = basePath.resolve(claudeConfigFileName)
         if (!configFile.exists()) {
