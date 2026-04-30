@@ -63,21 +63,28 @@ class ClaudeDesktopProvider(private val logging: Logging, private val proxyJarMa
 
         return "Installation successful. Please restart $name if it is currently running."
     }
+val possiblePaths = when {
+    os.contains("win") -> listOf(
+        Path.of(home, "AppData", "Roaming", "Claude"),
+        Path.of(home, "AppData", "Local", "Claude")
+    )
+    os.contains("mac") || os.contains("darwin") -> listOf(
+        Path.of(home, "Library", "Application Support", "Claude"),
+        Path.of(home, ".claude")
+    )
+    os.contains("linux") -> listOf(
+        Path.of(home, ".config", "Claude"),
+        Path.of(home, ".claude")
+    )
+    else -> return null
+}
 
-    private fun configFilePath(): Path? {
-        val os = System.getProperty("os.name").lowercase()
-        val home = System.getProperty("user.home")
+  //// pick first existing path
+val basePath = possiblePaths.firstOrNull { it.exists() } ?: possiblePaths.first()
 
-        val basePath = when {
-            os.contains("win") -> Path.of(home, "AppData", "Roaming", "Claude")
-            os.contains("mac") || os.contains("darwin") -> Path.of(home, "Library", "Application Support", "Claude")
-            os.contains("linux") -> Path.of(home, ".config", "Claude")
-            else -> return null
-        }
-
-        if (!basePath.exists()) {
-            basePath.toFile().mkdirs()
-        }
+if (!basePath.exists()) {
+    basePath.toFile().mkdirs()
+}
 
         val configFile = basePath.resolve(claudeConfigFileName)
         if (!configFile.exists()) {
