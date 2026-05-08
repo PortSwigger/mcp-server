@@ -20,7 +20,9 @@ object TargetValidation {
     fun isValidTarget(target: String): Boolean {
         if (target.isBlank() || target.length > MAX_TARGET_LENGTH) return false
 
-        if (target.contains("\t") || target.contains("\n") || target.contains("\r")) return false
+        // Reject any whitespace (including \t \n \r and spaces) and the persistence delimiter `,`
+        // — these are how an attacker poisons the auto-approve list with multi-host strings.
+        if (target.contains(',') || target.any { it.isWhitespace() }) return false
 
         if (target.startsWith("[") && target.contains("]:")) {
             val portPart = target.substringAfterLast(":")

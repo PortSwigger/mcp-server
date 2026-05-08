@@ -7,6 +7,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
+private const val TARGET_SEPARATOR = "\n"
+
 class McpConfig(storage: PersistedObject, private val logging: Logging) {
 
     var enabled by storage.boolean(true)
@@ -40,6 +42,10 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     private val targetsChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
     private val historyAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
 
+    init {
+        migrateLegacyAutoApproveTargets()
+    }
+
     var autoApproveTargets: String
         get() = _autoApproveTargets
         set(value) {
@@ -50,20 +56,20 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         }
 
     fun addAutoApproveTarget(target: String): Boolean {
+        val trimmed = target.trim()
+        if (!TargetValidation.isValidTarget(trimmed)) return false
         val currentTargets = getAutoApproveTargetsList()
-        if (target.trim().isNotEmpty() && !currentTargets.contains(target.trim())) {
-            val newTargets = currentTargets + target.trim()
-            autoApproveTargets = newTargets.joinToString(",")
-            return true
-        }
-        return false
+        if (currentTargets.contains(trimmed)) return false
+        val newTargets = currentTargets + trimmed
+        autoApproveTargets = newTargets.joinToString(TARGET_SEPARATOR)
+        return true
     }
 
     fun removeAutoApproveTarget(target: String): Boolean {
         val currentTargets = getAutoApproveTargetsList()
         val newTargets = currentTargets.filter { it != target.trim() }
         if (newTargets.size != currentTargets.size) {
-            autoApproveTargets = newTargets.joinToString(",")
+            autoApproveTargets = newTargets.joinToString(TARGET_SEPARATOR)
             return true
         }
         return false
@@ -73,8 +79,28 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         return if (_autoApproveTargets.isBlank()) {
             emptyList()
         } else {
-            _autoApproveTargets.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            _autoApproveTargets.split(TARGET_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }
         }
+    }
+
+    // Pre-fix releases stored the auto-approve list as a comma-joined string. A comma in a
+    // hostname (sent via send_http1_request's targetHostname) round-tripped through write→read
+    // as multiple independent allow-list entries — see report 3717354. Rewrite any legacy
+    // comma-form on first load, dropping anything that fails revalidation.
+    private fun migrateLegacyAutoApproveTargets() {
+        val current = _autoApproveTargets
+        if (current.isBlank() || !current.contains(',')) return
+
+        val parts = current.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }
+        val (valid, invalid) = parts.partition { TargetValidation.isValidTarget(it) }
+        if (invalid.isNotEmpty()) {
+            logging.logToError(
+                "Auto-approved HTTP targets: discarded ${invalid.size} invalid entr" +
+                    (if (invalid.size == 1) "y" else "ies") +
+                    " during legacy comma-format migration: ${invalid.joinToString(", ")}"
+            )
+        }
+        _autoApproveTargets = valid.joinToString(TARGET_SEPARATOR)
     }
 
     fun clearAutoApproveTargets() {

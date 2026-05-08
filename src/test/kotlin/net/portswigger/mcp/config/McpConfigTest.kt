@@ -87,8 +87,57 @@ class McpConfigTest {
         config.addAutoApproveTarget("example.com")
         config.addAutoApproveTarget("test.org")
 
-        assertEquals("example.com,test.org", config.autoApproveTargets)
+        assertEquals("example.com\ntest.org", config.autoApproveTargets)
         assertEquals(listOf("example.com", "test.org"), config.getAutoApproveTargetsList())
+    }
+
+    @Test
+    fun `addAutoApproveTarget should reject comma-injected multi-host string`() {
+        // Regression test for report 3717354 (UI Consent Bypass via Comma Injection).
+        // A single attacker-controlled hostname containing commas must not be persisted as
+        // multiple independent allow-list entries.
+        val poisoned = "example.com,127.0.0.1,*.attacker.com,169.254.169.254"
+
+        val result = config.addAutoApproveTarget(poisoned)
+
+        assertFalse(result)
+        assertEquals("", config.autoApproveTargets)
+        assertEquals(emptyList<String>(), config.getAutoApproveTargetsList())
+    }
+
+    @Test
+    fun `addAutoApproveTarget should reject targets containing whitespace`() {
+        assertFalse(config.addAutoApproveTarget("evil.com 127.0.0.1"))
+        assertFalse(config.addAutoApproveTarget("evil.com\t127.0.0.1"))
+        assertFalse(config.addAutoApproveTarget("evil.com\n127.0.0.1"))
+        assertEquals("", config.autoApproveTargets)
+    }
+
+    @Test
+    fun `legacy comma-format storage should be migrated and revalidated on load`() {
+        // Simulate a project file written by a pre-fix release with one well-formed entry,
+        // one entry with whitespace (now invalid), and one comma-injected poison entry.
+        // The injected commas split into individual hosts; whitespace entries get dropped.
+        val storage = mutableMapOf<String, Any>(
+            "_autoApproveTargets" to "example.com,bad host,127.0.0.1,*.api.com"
+        )
+        persistedObject = mockk<PersistedObject>().apply {
+            every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
+            every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
+            every { getInteger(any()) } answers { storage[firstArg()] as? Int ?: 0 }
+            every { setBoolean(any(), any()) } answers { storage[firstArg()] = secondArg<Boolean>() }
+            every { setString(any(), any()) } answers { storage[firstArg()] = secondArg<String>() }
+            every { setInteger(any(), any()) } answers { storage[firstArg()] = secondArg<Int>() }
+        }
+
+        config = McpConfig(persistedObject, mockLogging)
+
+        assertEquals(
+            listOf("example.com", "127.0.0.1", "*.api.com"),
+            config.getAutoApproveTargetsList()
+        )
+        assertEquals("example.com\n127.0.0.1\n*.api.com", config.autoApproveTargets)
+        verify { mockLogging.logToError(match<String> { it.contains("bad host") }) }
     }
 
     @Test
