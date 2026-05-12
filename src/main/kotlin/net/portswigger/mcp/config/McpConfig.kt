@@ -7,6 +7,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
+private const val TARGET_SEPARATOR = "\n"
+
 class McpConfig(storage: PersistedObject, private val logging: Logging) {
 
     var enabled by storage.boolean(true)
@@ -49,21 +51,29 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
             }
         }
 
-    fun addAutoApproveTarget(target: String): Boolean {
-        val currentTargets = getAutoApproveTargetsList()
-        if (target.trim().isNotEmpty() && !currentTargets.contains(target.trim())) {
-            val newTargets = currentTargets + target.trim()
-            autoApproveTargets = newTargets.joinToString(",")
-            return true
+    init {
+        val current = getAutoApproveTargetsList()
+        val valid = current.filter { TargetValidation.isValidTarget(it) }
+        if (valid.size != current.size) {
+            _autoApproveTargets = valid.joinToString(TARGET_SEPARATOR)
         }
-        return false
+    }
+
+    fun addAutoApproveTarget(target: String): Boolean {
+        val trimmed = target.trim()
+        if (!TargetValidation.isValidTarget(trimmed)) return false
+        val currentTargets = getAutoApproveTargetsList()
+        if (currentTargets.contains(trimmed)) return false
+        val newTargets = currentTargets + trimmed
+        autoApproveTargets = newTargets.joinToString(TARGET_SEPARATOR)
+        return true
     }
 
     fun removeAutoApproveTarget(target: String): Boolean {
         val currentTargets = getAutoApproveTargetsList()
         val newTargets = currentTargets.filter { it != target.trim() }
         if (newTargets.size != currentTargets.size) {
-            autoApproveTargets = newTargets.joinToString(",")
+            autoApproveTargets = newTargets.joinToString(TARGET_SEPARATOR)
             return true
         }
         return false
@@ -73,7 +83,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         return if (_autoApproveTargets.isBlank()) {
             emptyList()
         } else {
-            _autoApproveTargets.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            _autoApproveTargets.split(TARGET_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }
         }
     }
 
