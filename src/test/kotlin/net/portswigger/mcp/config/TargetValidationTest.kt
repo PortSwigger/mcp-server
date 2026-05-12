@@ -57,12 +57,9 @@ class TargetValidationTest {
         assertFalse(isValidTarget("example\ncom"))
         assertFalse(isValidTarget("example\rcom"))
 
-        // Spaces (multi-host strings or fingerprinting attempts)
         assertFalse(isValidTarget("example com"))
         assertFalse(isValidTarget("example.com 127.0.0.1"))
 
-        // Commas — the persistence-layer delimiter. Allowing these makes one stored entry
-        // round-trip as multiple allow-list entries on read (report 3717354).
         assertFalse(isValidTarget("example.com,127.0.0.1"))
         assertFalse(isValidTarget("example.com,127.0.0.1,*.attacker.com,169.254.169.254"))
         assertFalse(isValidTarget(","))

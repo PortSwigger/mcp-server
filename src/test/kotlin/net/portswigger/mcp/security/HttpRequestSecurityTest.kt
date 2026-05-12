@@ -166,7 +166,7 @@ class HttpRequestSecurityTest {
             "configEditingTooling" to false,
             "requireHttpRequestApproval" to true,
             "host" to "127.0.0.1",
-            "_autoApproveTargets" to "example.com,,  ,test.org",
+            "_autoApproveTargets" to "example.com\n\n  \ntest.org",
             "port" to 9876
         )
 
@@ -197,16 +197,11 @@ class HttpRequestSecurityTest {
 
     @Test
     fun `comma-laden hostname from approval dialog must not poison auto-approve list`() {
-        // Regression test for report 3717354. Mirrors what SwingUserApprovalHandler does
-        // when the user clicks "Always Allow Host": persist `hostname` (the JSON-RPC
-        // parameter, fully attacker-controlled) and resume the request as approved.
-        // Pre-fix, a comma-laden hostname round-tripped as N allow-list entries.
         val poisoned = "example.com,127.0.0.1,*.attacker.com,169.254.169.254"
 
         coEvery {
             mockApprovalHandler.requestApproval(poisoned, 443, config, any(), any())
         } coAnswers {
-            // Mimic the dialog's persistence side effect.
             config.addAutoApproveTarget(poisoned)
             true
         }
@@ -215,13 +210,8 @@ class HttpRequestSecurityTest {
         coEvery { mockApprovalHandler.requestApproval("evil.attacker.com", 443, config, any(), any()) } returns false
 
         runBlocking {
-            // The current request still resolves true (the user did click Allow), but…
             assertTrue(HttpRequestSecurity.checkHttpRequestPermission(poisoned, 443, config))
-
-            // …the persisted allow-list must remain empty: validation rejects the multi-host string.
             assertEquals(emptyList<String>(), config.getAutoApproveTargetsList())
-
-            // Subsequent silent SSRF attempts to the smuggled hosts must still hit approval.
             assertFalse(HttpRequestSecurity.checkHttpRequestPermission("127.0.0.1", 8123, config))
             assertFalse(HttpRequestSecurity.checkHttpRequestPermission("169.254.169.254", 80, config))
             assertFalse(HttpRequestSecurity.checkHttpRequestPermission("evil.attacker.com", 443, config))

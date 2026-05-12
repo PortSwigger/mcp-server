@@ -42,10 +42,6 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     private val targetsChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
     private val historyAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
 
-    init {
-        migrateLegacyAutoApproveTargets()
-    }
-
     var autoApproveTargets: String
         get() = _autoApproveTargets
         set(value) {
@@ -54,6 +50,14 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
                 notifyTargetsChanged()
             }
         }
+
+    init {
+        val current = getAutoApproveTargetsList()
+        val valid = current.filter { TargetValidation.isValidTarget(it) }
+        if (valid.size != current.size) {
+            _autoApproveTargets = valid.joinToString(TARGET_SEPARATOR)
+        }
+    }
 
     fun addAutoApproveTarget(target: String): Boolean {
         val trimmed = target.trim()
@@ -81,26 +85,6 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         } else {
             _autoApproveTargets.split(TARGET_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }
         }
-    }
-
-    // Pre-fix releases stored the auto-approve list as a comma-joined string. A comma in a
-    // hostname (sent via send_http1_request's targetHostname) round-tripped through write→read
-    // as multiple independent allow-list entries — see report 3717354. Rewrite any legacy
-    // comma-form on first load, dropping anything that fails revalidation.
-    private fun migrateLegacyAutoApproveTargets() {
-        val current = _autoApproveTargets
-        if (current.isBlank() || !current.contains(',')) return
-
-        val parts = current.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }
-        val (valid, invalid) = parts.partition { TargetValidation.isValidTarget(it) }
-        if (invalid.isNotEmpty()) {
-            logging.logToError(
-                "Auto-approved HTTP targets: discarded ${invalid.size} invalid entr" +
-                    (if (invalid.size == 1) "y" else "ies") +
-                    " during legacy comma-format migration: ${invalid.joinToString(", ")}"
-            )
-        }
-        _autoApproveTargets = valid.joinToString(TARGET_SEPARATOR)
     }
 
     fun clearAutoApproveTargets() {
