@@ -32,6 +32,7 @@ class TargetValidationTest {
 
         // IPv6 formats
         assertTrue(isValidTarget("::1"))
+        assertTrue(isValidTarget("2001:db8::1"))
         assertTrue(isValidTarget("[::1]:8080"))
 
         // Edge cases with permissive validation
@@ -56,6 +57,19 @@ class TargetValidationTest {
         assertFalse(isValidTarget("example\tcom"))
         assertFalse(isValidTarget("example\ncom"))
         assertFalse(isValidTarget("example\rcom"))
+
+        assertFalse(isValidTarget("example com"))
+        assertFalse(isValidTarget("example.com 127.0.0.1"))
+
+        assertFalse(isValidTarget("example.com,127.0.0.1"))
+        assertFalse(isValidTarget("example.com,127.0.0.1,*.attacker.com,169.254.169.254"))
+        assertFalse(isValidTarget(","))
+        assertFalse(isValidTarget("a,"))
+
+        // Malformed multi-colon strings (not valid IPv6)
+        assertFalse(isValidTarget("garbage:foo:bar"))
+        assertFalse(isValidTarget("example.com:notaport:extra"))
+        assertFalse(isValidTarget("*.example.com:notaport:extra"))
 
         // Oversized input
         assertFalse(isValidTarget("a".repeat(256)))
