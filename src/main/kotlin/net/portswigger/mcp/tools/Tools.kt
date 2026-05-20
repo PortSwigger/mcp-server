@@ -60,6 +60,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
         val response = api.http().sendRequest(request)
 
+        response?.takeIf { it.hasResponse() }?.let { api.siteMap().add(it) }
+
         response?.toString() ?: "<no response>"
     }
 
@@ -111,11 +113,14 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody)
         val response = api.http().sendRequest(request, HttpMode.HTTP_2)
 
+        response?.takeIf { it.hasResponse() }?.let { api.siteMap().add(it) }
+
         response?.toString() ?: "<no response>"
     }
 
     mcpTool<CreateRepeaterTab>("Creates a new Repeater tab with the specified HTTP request and optional tab name. Make sure to use carriage returns appropriately.") {
-        val request = HttpRequest.httpRequest(toMontoyaService(), content)
+        val fixedContent = content.replace("\r", "").replace("\n", "\r\n")
+        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
         api.repeater().sendToRepeater(request, tabName)
     }
 

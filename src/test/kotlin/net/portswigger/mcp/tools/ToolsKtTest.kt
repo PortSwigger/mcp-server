@@ -173,6 +173,7 @@ class ToolsKtTest {
             }
             every { api.http() } returns httpService
             every { httpResponse.toString() } returns "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nResponse body"
+            every { httpResponse.hasResponse() } returns true
             every { httpService.sendRequest(capture(capturedRequest)) } returns httpResponse
 
             runBlocking {
@@ -192,6 +193,7 @@ class ToolsKtTest {
             }
 
             verify(exactly = 1) { httpService.sendRequest(any<HttpRequest>()) }
+            verify(exactly = 1) { api.siteMap().add(httpResponse) }
             assertEquals("GET /foo HTTP/1.1\r\nHost: example.com\r\n\r\n", capturedRequest.captured.toString(), "Request body should match")
         }
 
@@ -222,6 +224,8 @@ class ToolsKtTest {
                 delay(100)
                 result.expectTextContent("<no response>")
             }
+
+            verify(exactly = 0) { api.siteMap().add(any<burp.api.montoya.http.message.HttpRequestResponse>()) }
         }
 
         @Test
@@ -235,6 +239,7 @@ class ToolsKtTest {
 
             every { HttpRequest.http2Request(any(), capture(headersSlot), capture(bodySlot)) } returns httpRequest
             every { httpResponse.toString() } returns "HTTP/2 200 OK\r\nContent-Type: text/plain\r\n\r\nResponse body"
+            every { httpResponse.hasResponse() } returns true
             every { api.http() } returns httpService
             every { httpService.sendRequest(capture(requestSlot), HttpMode.HTTP_2) } returns httpResponse
 
@@ -265,7 +270,8 @@ class ToolsKtTest {
             }
 
             verify(exactly = 1) { HttpRequest.http2Request(any(), any(), any<String>()) }
-            
+            verify(exactly = 1) { api.siteMap().add(httpResponse) }
+
             assertEquals("Test body", bodySlot.captured, "Request body should match")
             
             val pseudoHeaderList = headersSlot.captured.filter { it.name().startsWith(":") }
@@ -307,8 +313,76 @@ class ToolsKtTest {
                 delay(100)
                 result.expectTextContent("<no response>")
             }
+
+            verify(exactly = 0) { api.siteMap().add(any<burp.api.montoya.http.message.HttpRequestResponse>()) }
         }
-        
+
+        @Test
+        fun `http2 should not add to site map when response is missing`() {
+            val httpService = mockk<Http>()
+            val httpRequest = mockk<HttpRequest>()
+            val httpResponse = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+
+            every { HttpRequest.http2Request(any(), any(), any<String>()) } returns httpRequest
+            every { api.http() } returns httpService
+            every { httpService.sendRequest(any(), HttpMode.HTTP_2) } returns httpResponse
+            every { httpResponse.hasResponse() } returns false
+            every { httpResponse.toString() } returns "HttpRequestResponse{httpRequest=..., httpResponse=null}"
+
+            val pseudoHeaders = mapOf("method" to "GET", "path" to "/test", "authority" to "example.com", "scheme" to "https")
+            val headers = mapOf("User-Agent" to "Test Agent")
+
+            runBlocking {
+                val result = client.callTool(
+                    "send_http2_request", mapOf(
+                        "pseudoHeaders" to Json.encodeToJsonElement(pseudoHeaders),
+                        "headers" to Json.encodeToJsonElement(headers),
+                        "requestBody" to "",
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true
+                    )
+                )
+
+                delay(100)
+                assertNotNull(result)
+            }
+
+            verify(exactly = 0) { api.siteMap().add(any<burp.api.montoya.http.message.HttpRequestResponse>()) }
+        }
+
+        @Test
+        fun `create repeater tab should normalize line endings`() {
+            val repeater = mockk<burp.api.montoya.repeater.Repeater>(relaxed = true)
+            val contentSlot = slot<String>()
+
+            every { HttpRequest.httpRequest(any(), capture(contentSlot)) } answers {
+                val captured = secondArg<String>()
+                mockk<HttpRequest>().also {
+                    every { it.toString() } returns captured
+                }
+            }
+            every { api.repeater() } returns repeater
+
+            runBlocking {
+                val result = client.callTool(
+                    "create_repeater_tab", mapOf(
+                        "tabName" to "lf-only",
+                        "content" to "GET /foo HTTP/1.1\nHost: example.com\n\n",
+                        "targetHostname" to "example.com",
+                        "targetPort" to 80,
+                        "usesHttps" to false
+                    )
+                )
+
+                delay(100)
+                assertNotNull(result)
+            }
+
+            verify(exactly = 1) { repeater.sendToRepeater(any<HttpRequest>(), "lf-only") }
+            assertEquals("GET /foo HTTP/1.1\r\nHost: example.com\r\n\r\n", contentSlot.captured, "LF should be normalized to CRLF before sending to Repeater")
+        }
+
         @Test
         fun `http2 pseudo headers should be ordered correctly`() {
             val httpService = mockk<Http>()
