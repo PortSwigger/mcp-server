@@ -42,6 +42,30 @@ private fun truncateIfNeeded(serialized: String): String {
     }
 }
 
+private fun buildHttp2HeaderList(
+    pseudoHeaders: Map<String, String>, headers: Map<String, String>
+): List<HttpHeader> {
+    val orderedPseudoHeaderNames = listOf(":scheme", ":method", ":path", ":authority")
+
+    val fixedPseudoHeaders = LinkedHashMap<String, String>().apply {
+        orderedPseudoHeaderNames.forEach { name ->
+            val value = pseudoHeaders[name.removePrefix(":")] ?: pseudoHeaders[name]
+            if (value != null) {
+                put(name, value)
+            }
+        }
+
+        pseudoHeaders.forEach { (key, value) ->
+            val properKey = if (key.startsWith(":")) key else ":$key"
+            if (!containsKey(properKey)) {
+                put(properKey, value)
+            }
+        }
+    }
+
+    return (fixedPseudoHeaders + headers).map { HttpHeader.httpHeader(it.key.lowercase(), it.value) }
+}
+
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
@@ -88,25 +112,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         api.logging().logToOutput("MCP HTTP/2 request: $targetHostname:$targetPort")
 
-        val orderedPseudoHeaderNames = listOf(":scheme", ":method", ":path", ":authority")
-
-        val fixedPseudoHeaders = LinkedHashMap<String, String>().apply {
-            orderedPseudoHeaderNames.forEach { name ->
-                val value = pseudoHeaders[name.removePrefix(":")] ?: pseudoHeaders[name]
-                if (value != null) {
-                    put(name, value)
-                }
-            }
-
-            pseudoHeaders.forEach { (key, value) ->
-                val properKey = if (key.startsWith(":")) key else ":$key"
-                if (!containsKey(properKey)) {
-                    put(properKey, value)
-                }
-            }
-        }
-
-        val headerList = (fixedPseudoHeaders + headers).map { HttpHeader.httpHeader(it.key.lowercase(), it.value) }
+        val headerList = buildHttp2HeaderList(pseudoHeaders, headers)
 
         val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody)
         val response = api.http().sendRequest(request, HttpMode.HTTP_2)
@@ -114,8 +120,14 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         response?.toString() ?: "<no response>"
     }
 
-    mcpTool<CreateRepeaterTab>("Creates a new Repeater tab with the specified HTTP request and optional tab name. Make sure to use carriage returns appropriately.") {
+    mcpTool<CreateRepeaterTab>("Creates an HTTP/1.1 Repeater tab with the specified raw HTTP request and optional tab name. Make sure to use carriage returns appropriately. Prefer create_repeater_tab_http2 for modern web targets that speak HTTP/2.") {
         val request = HttpRequest.httpRequest(toMontoyaService(), content)
+        api.repeater().sendToRepeater(request, tabName)
+    }
+
+    mcpTool<CreateRepeaterTabHttp2>("Creates an HTTP/2 Repeater tab with the specified HTTP/2 request and optional tab name. Use this by default for modern web targets. Do NOT pass headers to the body parameter.") {
+        val headerList = buildHttp2HeaderList(pseudoHeaders, headers)
+        val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody)
         api.repeater().sendToRepeater(request, tabName)
     }
 
@@ -358,6 +370,17 @@ data class SendHttp2Request(
 data class CreateRepeaterTab(
     val tabName: String?,
     val content: String,
+    override val targetHostname: String,
+    override val targetPort: Int,
+    override val usesHttps: Boolean
+) : HttpServiceParams
+
+@Serializable
+data class CreateRepeaterTabHttp2(
+    val tabName: String?,
+    val pseudoHeaders: Map<String, String>,
+    val headers: Map<String, String>,
+    val requestBody: String,
     override val targetHostname: String,
     override val targetPort: Int,
     override val usesHttps: Boolean
