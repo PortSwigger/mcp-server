@@ -58,9 +58,10 @@ class ToolsKtTest {
             every { getBoolean("enabled") } returns true
             every { getBoolean("configEditingTooling") } returns true
             every { getBoolean("requireHttpRequestApproval") } returns false
-            every { getBoolean("requireHistoryAccessApproval") } returns false
+            every { getBoolean("requireDataAccessApproval") } returns false
             every { getBoolean("_alwaysAllowHttpHistory") } returns false
             every { getBoolean("_alwaysAllowWebSocketHistory") } returns false
+            every { getBoolean("_alwaysAllowOrganizer") } returns false
             every { getString("host") } returns "127.0.0.1"
             every { getString("_autoApproveTargets") } returns ""
             every { getInteger("port") } returns testPort

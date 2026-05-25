@@ -17,6 +17,7 @@ class ServerConfigurationPanel(
 
     private lateinit var alwaysAllowHttpHistoryCheckBox: JCheckBox
     private lateinit var alwaysAllowWebSocketHistoryCheckBox: JCheckBox
+    private lateinit var alwaysAllowOrganizerCheckBox: JCheckBox
 
     init {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -61,12 +62,12 @@ class ServerConfigurationPanel(
         add(httpRequestApprovalCheckBox)
         add(createVerticalStrut(Design.Spacing.MD))
 
-        val historyAccessApprovalCheckBox = createHistoryAccessApprovalCheckBox()
-        add(historyAccessApprovalCheckBox)
+        val dataAccessApprovalCheckBox = createDataAccessApprovalCheckBox()
+        add(dataAccessApprovalCheckBox)
         add(createVerticalStrut(Design.Spacing.SM))
 
         alwaysAllowHttpHistoryCheckBox = createIndentedCheckBox(
-            "Always allow HTTP history access", config.alwaysAllowHttpHistory, config.requireHistoryAccessApproval
+            "Always allow HTTP history access", config.alwaysAllowHttpHistory, config.requireDataAccessApproval
         ) { config.alwaysAllowHttpHistory = it }
         add(alwaysAllowHttpHistoryCheckBox)
         add(createVerticalStrut(Design.Spacing.SM))
@@ -74,9 +75,17 @@ class ServerConfigurationPanel(
         alwaysAllowWebSocketHistoryCheckBox = createIndentedCheckBox(
             "Always allow WebSocket history access",
             config.alwaysAllowWebSocketHistory,
-            config.requireHistoryAccessApproval
+            config.requireDataAccessApproval
         ) { config.alwaysAllowWebSocketHistory = it }
         add(alwaysAllowWebSocketHistoryCheckBox)
+        add(createVerticalStrut(Design.Spacing.SM))
+
+        alwaysAllowOrganizerCheckBox = createIndentedCheckBox(
+            "Always allow Organizer access",
+            config.alwaysAllowOrganizer,
+            config.requireDataAccessApproval
+        ) { config.alwaysAllowOrganizer = it }
+        add(alwaysAllowOrganizerCheckBox)
 
         add(validationErrorLabel)
     }
@@ -95,26 +104,30 @@ class ServerConfigurationPanel(
         return enabledPanel
     }
 
-    private fun createHistoryAccessApprovalCheckBox(): JCheckBox {
+    private fun createDataAccessApprovalCheckBox(): JCheckBox {
         return createStandardCheckBox(
-            "Require approval for history access", config.requireHistoryAccessApproval
+            "Require approval for project data access", config.requireDataAccessApproval
         ) { enabled ->
-            config.requireHistoryAccessApproval = enabled
+            config.requireDataAccessApproval = enabled
             if (!enabled) {
                 config.alwaysAllowHttpHistory = false
                 config.alwaysAllowWebSocketHistory = false
+                config.alwaysAllowOrganizer = false
                 alwaysAllowHttpHistoryCheckBox.isSelected = false
                 alwaysAllowWebSocketHistoryCheckBox.isSelected = false
+                alwaysAllowOrganizerCheckBox.isSelected = false
             }
             alwaysAllowHttpHistoryCheckBox.isEnabled = enabled
             alwaysAllowWebSocketHistoryCheckBox.isEnabled = enabled
+            alwaysAllowOrganizerCheckBox.isEnabled = enabled
         }
     }
 
-    fun updateHistoryAccessCheckboxes() {
+    fun updateDataAccessCheckboxes() {
         SwingUtilities.invokeLater {
             alwaysAllowHttpHistoryCheckBox.isSelected = config.alwaysAllowHttpHistory
             alwaysAllowWebSocketHistoryCheckBox.isSelected = config.alwaysAllowWebSocketHistory
+            alwaysAllowOrganizerCheckBox.isSelected = config.alwaysAllowOrganizer
         }
     }
 
