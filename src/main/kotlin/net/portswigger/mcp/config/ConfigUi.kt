@@ -80,12 +80,13 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         setupConfigListeners()
     }
 
-    private fun setupConfigListeners() {
-        val dataAccessRefreshListener = {
-            SwingUtilities.invokeLater {
-                serverConfigurationPanel.updateDataAccessCheckboxes()
-            }
+    private val dataAccessRefreshListener: () -> Unit = {
+        SwingUtilities.invokeLater {
+            serverConfigurationPanel.updateDataAccessCheckboxes()
         }
+    }
+
+    private fun setupConfigListeners() {
         val handle = config.addDataAccessChangeListener(dataAccessRefreshListener)
         listenerHandles.add(handle)
     }
