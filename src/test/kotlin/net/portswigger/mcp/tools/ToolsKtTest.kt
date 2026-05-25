@@ -351,12 +351,53 @@ class ToolsKtTest {
             
             val expectedOrder = listOf(":scheme", ":method", ":path", ":authority")
             for (i in 0 until minOf(expectedOrder.size, pseudoHeaderNames.size)) {
-                assertEquals(expectedOrder[i], pseudoHeaderNames[i], 
+                assertEquals(expectedOrder[i], pseudoHeaderNames[i],
                     "Pseudo headers should follow the order: scheme, method, path, authority")
             }
         }
+
+        @Test
+        fun `create repeater tab http2 should build http2 request`() {
+            val repeater = mockk<burp.api.montoya.repeater.Repeater>(relaxed = true)
+            val httpRequest = mockk<HttpRequest>()
+            val headersSlot = slot<List<HttpHeader>>()
+            val bodySlot = slot<String>()
+
+            every { HttpRequest.http2Request(any(), capture(headersSlot), capture(bodySlot)) } returns httpRequest
+            every { api.repeater() } returns repeater
+
+            val pseudoHeaders = mapOf(
+                "method" to "POST", "path" to "/api/x", "authority" to "example.com", "scheme" to "https"
+            )
+            val headers = mapOf("Content-Type" to "application/json")
+            val requestBody = "{\"k\":\"v\"}"
+
+            runBlocking {
+                val result = client.callTool(
+                    "create_repeater_tab_http2", mapOf(
+                        "tabName" to "h2-tab",
+                        "pseudoHeaders" to Json.encodeToJsonElement(pseudoHeaders),
+                        "headers" to Json.encodeToJsonElement(headers),
+                        "requestBody" to requestBody,
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true
+                    )
+                )
+
+                delay(100)
+                assertNotNull(result)
+            }
+
+            verify(exactly = 1) { repeater.sendToRepeater(httpRequest, "h2-tab") }
+            assertEquals("{\"k\":\"v\"}", bodySlot.captured, "Request body should be passed through unchanged")
+
+            val pseudoHeaderNames = headersSlot.captured.filter { it.name().startsWith(":") }.map { it.name() }
+            assertEquals(listOf(":scheme", ":method", ":path", ":authority"), pseudoHeaderNames)
+            assertTrue(headersSlot.captured.any { it.name() == "content-type" && it.value() == "application/json" })
+        }
     }
-    
+
     @Nested
     inner class UtilityToolsTests {
         @Test
