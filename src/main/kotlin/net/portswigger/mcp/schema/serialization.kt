@@ -1,6 +1,7 @@
 package net.portswigger.mcp.schema
 
 import burp.api.montoya.collaborator.Interaction as CollaboratorInteraction
+import burp.api.montoya.organizer.OrganizerItem
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
 import burp.api.montoya.proxy.ProxyWebSocketMessage
 import burp.api.montoya.scanner.audit.issues.AuditIssue
@@ -46,6 +47,16 @@ fun burp.api.montoya.http.message.HttpRequestResponse.toSerializableForm(): Http
 
 fun ProxyHttpRequestResponse.toSerializableForm(): HttpRequestResponse {
     return HttpRequestResponse(
+        request = request()?.toString() ?: "<no request>",
+        response = response()?.toString() ?: "<no response>",
+        notes = annotations().notes()
+    )
+}
+
+fun OrganizerItem.toSerializableForm(): OrganizerItemDetails {
+    return OrganizerItemDetails(
+        id = id(),
+        status = status().name,
         request = request()?.toString() ?: "<no request>",
         response = response()?.toString() ?: "<no response>",
         notes = annotations().notes()
@@ -103,6 +114,15 @@ enum class AuditIssueConfidence {
 
 @Serializable
 data class HttpRequestResponse(
+    val request: String?,
+    val response: String?,
+    val notes: String?
+)
+
+@Serializable
+data class OrganizerItemDetails(
+    val id: Int,
+    val status: String,
     val request: String?,
     val response: String?,
     val notes: String?
