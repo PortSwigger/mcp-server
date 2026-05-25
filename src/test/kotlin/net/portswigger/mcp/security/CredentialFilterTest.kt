@@ -251,61 +251,58 @@ class CredentialFilterTest {
 
     @Test
     fun `test security filter with malformed Json on user_options`() {
-        config.filterConfigCredentials = true
         val malformedJson = """
         {
             "user_options": {
-                "bchecks": {},
                 "connections": {
-                    "platform_authentication": {
-                        "credentials": []
-                    },
-                    "socks_proxy": { "password": "" 
-                },
-                "display": {},
-                "extender": {},
-                "intruder": {},
-                "misc": {},
-                "proxy": {},
-                "repeater": {},
-                "ssl": {}
+                    "socks_proxy": { "password": "leakme"
+                }
             }
-        }
         """.trimIndent()
-        val exception = Assertions.assertThrows(RuntimeException::class.java) {
-            filterConfigCredentials(malformedJson)
-        }
-        Assertions.assertEquals("Failed to filter credentials", exception.message)
-        Assertions.assertNotNull(exception.cause)
+        val result = filterConfigCredentials(malformedJson)
+        Assertions.assertFalse(result.contains("leakme"), "Original input must not be echoed on parse failure")
+        val parsed = Json.parseToJsonElement(result).jsonObject
+        Assertions.assertNotNull(parsed["error"])
     }
 
     @Test
     fun `test security filter with malformed Json on project_options`() {
-        config.filterConfigCredentials = true
         val malformedJson = """
         {
-            "bambda": {},
-            "logger": {},
-            "organiser": {},
             "project_options": {
                 "connections": {
-                    "platform_authentication": {
-                        "credentials": []
-                    },
-                    "socks_proxy": { "password": "" }
+                    "socks_proxy": { "password": "leakme" }
                 }
-            },
-            "proxy": {},
-            "repeater": {},
-            "sequencer": {},
-            "target": {}
-        
         """.trimIndent()
-        val exception = Assertions.assertThrows(RuntimeException::class.java) {
-            filterConfigCredentials(malformedJson)
+        val result = filterConfigCredentials(malformedJson)
+        Assertions.assertFalse(result.contains("leakme"), "Original input must not be echoed on parse failure")
+        val parsed = Json.parseToJsonElement(result).jsonObject
+        Assertions.assertNotNull(parsed["error"])
+    }
+
+    @Test
+    fun `proxy listener certificate password and REST API hashed key are redacted`() {
+        val input = """
+        {
+            "proxy": { "request_listeners": [ { "certificate_password": "p12pass" } ] },
+            "misc": { "api": { "keys": [ { "name": "k1", "hashed_key": "deadbeef" } ] } }
         }
-        Assertions.assertEquals("Failed to filter credentials", exception.message)
-        Assertions.assertNotNull(exception.cause)
+        """.trimIndent()
+        val parsed = Json.parseToJsonElement(filterConfigCredentials(input)).jsonObject
+        val listener = parsed["proxy"]!!.jsonObject["request_listeners"]!!.jsonArray[0].jsonObject
+        Assertions.assertEquals("*****", listener["certificate_password"]?.jsonPrimitive?.content)
+        val apiKey = parsed["misc"]!!.jsonObject["api"]!!.jsonObject["keys"]!!.jsonArray[0].jsonObject
+        Assertions.assertEquals("*****", apiKey["hashed_key"]?.jsonPrimitive?.content)
+        Assertions.assertEquals("k1", apiKey["name"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `sensitive key matching is case insensitive`() {
+        val input = """{"Password":"a","Certificate_Password":"b","HASHED_KEY":"c"}"""
+        val parsed = Json.parseToJsonElement(filterConfigCredentials(input)).jsonObject
+        Assertions.assertEquals("*****", parsed["Password"]?.jsonPrimitive?.content)
+        Assertions.assertEquals("*****", parsed["Certificate_Password"]?.jsonPrimitive?.content)
+        Assertions.assertEquals("*****", parsed["HASHED_KEY"]?.jsonPrimitive?.content)
     }
 
     @Test
