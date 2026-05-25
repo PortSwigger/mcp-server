@@ -81,12 +81,12 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     }
 
     private fun setupConfigListeners() {
-        val historyAccessRefreshListener = {
+        val dataAccessRefreshListener = {
             SwingUtilities.invokeLater {
-                serverConfigurationPanel.updateHistoryAccessCheckboxes()
+                serverConfigurationPanel.updateDataAccessCheckboxes()
             }
         }
-        val handle = config.addHistoryAccessChangeListener(historyAccessRefreshListener)
+        val handle = config.addDataAccessChangeListener(dataAccessRefreshListener)
         listenerHandles.add(handle)
     }
 

@@ -16,7 +16,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     var host by storage.string("127.0.0.1")
     var port by storage.int(9876)
     var requireHttpRequestApproval by storage.boolean(true)
-    var requireHistoryAccessApproval by storage.boolean(true)
+    var requireDataAccessApproval by storage.boolean(true)
 
     private var _alwaysAllowHttpHistory by storage.boolean(false)
     var alwaysAllowHttpHistory: Boolean
@@ -24,7 +24,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         set(value) {
             if (_alwaysAllowHttpHistory != value) {
                 _alwaysAllowHttpHistory = value
-                notifyHistoryAccessChanged()
+                notifyDataAccessChanged()
             }
         }
 
@@ -34,7 +34,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         set(value) {
             if (_alwaysAllowWebSocketHistory != value) {
                 _alwaysAllowWebSocketHistory = value
-                notifyHistoryAccessChanged()
+                notifyDataAccessChanged()
             }
         }
 
@@ -44,13 +44,13 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         set(value) {
             if (_alwaysAllowOrganizer != value) {
                 _alwaysAllowOrganizer = value
-                notifyHistoryAccessChanged()
+                notifyDataAccessChanged()
             }
         }
 
     private var _autoApproveTargets by storage.stringList("")
     private val targetsChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
-    private val historyAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
+    private val dataAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
 
     var autoApproveTargets: String
         get() = _autoApproveTargets
@@ -123,24 +123,24 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         }
     }
 
-    fun addHistoryAccessChangeListener(listener: () -> Unit): ListenerHandle {
+    fun addDataAccessChangeListener(listener: () -> Unit): ListenerHandle {
         val registration = ListenerRegistration(listener)
-        historyAccessChangeListeners.add(registration)
-        return ListenerHandle { removeHistoryAccessChangeListener(registration) }
+        dataAccessChangeListeners.add(registration)
+        return ListenerHandle { removeDataAccessChangeListener(registration) }
     }
 
-    private fun removeHistoryAccessChangeListener(registration: ListenerRegistration) {
-        historyAccessChangeListeners.remove(registration)
+    private fun removeDataAccessChangeListener(registration: ListenerRegistration) {
+        dataAccessChangeListeners.remove(registration)
     }
 
-    private fun notifyHistoryAccessChanged() {
-        cleanupStaleListeners(historyAccessChangeListeners)
-        val listeners = historyAccessChangeListeners.mapNotNull { it.listener.get() }
+    private fun notifyDataAccessChanged() {
+        cleanupStaleListeners(dataAccessChangeListeners)
+        val listeners = dataAccessChangeListeners.mapNotNull { it.listener.get() }
         listeners.forEach { listener ->
             try {
                 listener()
             } catch (e: Exception) {
-                logging.logToError("History access change listener failed: ${e.message}")
+                logging.logToError("Data access change listener failed: ${e.message}")
             }
         }
     }
@@ -152,7 +152,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
 
     fun cleanup() {
         targetsChangeListeners.clear()
-        historyAccessChangeListeners.clear()
+        dataAccessChangeListeners.clear()
     }
 }
 
