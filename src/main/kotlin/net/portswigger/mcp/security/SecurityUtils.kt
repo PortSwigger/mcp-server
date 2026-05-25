@@ -1,14 +1,11 @@
 package net.portswigger.mcp.security
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.awt.Frame
-import net.portswigger.mcp.config.McpConfig
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.*
-
-@Serializable
-data class SecurityConfig(
-    val options: Map<String, Map<String, JsonElement>>
-)
 
 /**
  * Finds the Burp Suite main frame or the largest available frame as fallback

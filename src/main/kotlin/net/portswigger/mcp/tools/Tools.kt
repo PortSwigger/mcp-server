@@ -212,7 +212,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         "Outputs current project-level configuration in JSON format. You can use this to determine the schema for available config options."
     ) {
         val json = api.burpSuite().exportProjectOptionsAsJson()
-        if (config.filterConfigCredentials == true) {
+        if (config.filterConfigCredentials) {
             filterConfigCredentials(json)
         } else {
             json
@@ -224,7 +224,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         "Outputs current user-level configuration in JSON format. You can use this to determine the schema for available config options."
     ) {
         val json = api.burpSuite().exportUserOptionsAsJson()
-        if (config.filterConfigCredentials == true) {
+        if (config.filterConfigCredentials) {
             filterConfigCredentials(json)
         } else {
             json
