@@ -43,18 +43,47 @@ private fun truncateIfNeeded(serialized: String): String {
 }
 
 /**
- * Normalizes HTTP content line endings from MCP clients.
+ * Normalizes HTTP request line endings from MCP clients.
  *
- * MCP clients (e.g. Claude Code) pass \r\n as literal escape sequences in JSON
- * tool parameters, which arrive as the 4-character text sequences backslash-r
- * and backslash-n rather than actual CR (0x0D) and LF (0x0A) bytes.
- * This produces malformed HTTP that strict servers (e.g. Apache-Coyote) reject
- * with 400 Bad Request.
+ * MCP clients (e.g. Claude Code) often emit `\r\n` as the 4-character literal
+ * sequence backslash-r-backslash-n in JSON tool parameters rather than actual
+ * CR (0x0D) + LF (0x0A) bytes. The resulting text parses as a single line,
+ * which strict servers (e.g. Apache-Coyote) reject with 400 Bad Request and
+ * which Burp/Montoya may "repair" by injecting headers after the body
+ * separator.
  *
- * This function converts both literal escape sequences and actual line endings
- * into proper HTTP CRLF line termination.
+ * Normalization is applied only to the request prelude (request line and
+ * headers, up to and including the first blank line). The body is preserved
+ * verbatim so that legitimate escape sequences in bodies — e.g. `\n` inside a
+ * JSON string literal — and binary payloads remain byte-exact. If no blank
+ * line is present, the entire content is treated as prelude.
  */
-private fun normalizeHttpContent(content: String): String = content
+internal fun normalizeHttpContent(content: String): String {
+    val preludeEnd = findPreludeEnd(content) ?: return normalizePrelude(content)
+    return normalizePrelude(content.substring(0, preludeEnd)) + content.substring(preludeEnd)
+}
+
+private val BLANK_LINE_MARKERS = listOf(
+    "\r\n\r\n",         // actual CRLF blank line
+    "\n\n",              // actual LF blank line
+    "\\r\\n\\r\\n",     // literal CRLF blank line
+    "\\n\\n",            // literal LF blank line
+)
+
+private fun findPreludeEnd(content: String): Int? {
+    var bestStart = -1
+    var bestLen = 0
+    for (marker in BLANK_LINE_MARKERS) {
+        val idx = content.indexOf(marker)
+        if (idx >= 0 && (bestStart < 0 || idx < bestStart)) {
+            bestStart = idx
+            bestLen = marker.length
+        }
+    }
+    return if (bestStart < 0) null else bestStart + bestLen
+}
+
+private fun normalizePrelude(prelude: String): String = prelude
     .replace("\\r\\n", "\n")   // Literal \r\n escape sequences → LF
     .replace("\\n", "\n")      // Remaining literal \n → LF
     .replace("\\r", "")        // Remaining literal \r → remove
