@@ -86,6 +86,14 @@ class ServerConfigurationPanel(
             config.requireDataAccessApproval
         ) { config.alwaysAllowOrganizer = it }
         add(alwaysAllowOrganizerCheckBox)
+        add(createVerticalStrut(Design.Spacing.MD))
+
+        val filterConfigCredentialsCheckBox = createCheckBoxWithSubtitle(
+            "Filter config credentials",
+            "Hides sensitive data in config files (Platform Authentication, socks proxy, etc.)",
+            config.filterConfigCredentials
+        ) { config.filterConfigCredentials = it }
+        add(filterConfigCredentialsCheckBox)
 
         add(validationErrorLabel)
     }

@@ -18,6 +18,7 @@ import net.portswigger.mcp.schema.toSerializableForm
 import net.portswigger.mcp.security.DataAccessSecurity
 import net.portswigger.mcp.security.DataAccessType
 import net.portswigger.mcp.security.HttpRequestSecurity
+import net.portswigger.mcp.security.filterConfigCredentials
 import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
 import javax.swing.JTextArea
@@ -210,14 +211,24 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         "output_project_options",
         "Outputs current project-level configuration in JSON format. You can use this to determine the schema for available config options."
     ) {
-        api.burpSuite().exportProjectOptionsAsJson()
+        val json = api.burpSuite().exportProjectOptionsAsJson()
+        if (config.filterConfigCredentials) {
+            filterConfigCredentials(json)
+        } else {
+            json
+        }
     }
 
     mcpTool(
         "output_user_options",
         "Outputs current user-level configuration in JSON format. You can use this to determine the schema for available config options."
     ) {
-        api.burpSuite().exportUserOptionsAsJson()
+        val json = api.burpSuite().exportUserOptionsAsJson()
+        if (config.filterConfigCredentials) {
+            filterConfigCredentials(json)
+        } else {
+            json
+        }
     }
 
     val toolingDisabledMessage =

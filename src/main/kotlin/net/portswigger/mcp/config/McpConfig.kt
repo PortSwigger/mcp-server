@@ -48,6 +48,8 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
             }
         }
 
+    var filterConfigCredentials by storage.boolean(true)
+
     private var _autoApproveTargets by storage.stringList("")
     private val targetsChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
     private val dataAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
