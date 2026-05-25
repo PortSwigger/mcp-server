@@ -1,5 +1,6 @@
 package net.portswigger.mcp.security
 
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -24,36 +25,36 @@ fun findBurpFrame(): Frame? {
         .maxByOrNull { it.width * it.height }
 }
 
+// Keys that hold credential-bearing values in Burp's exported user/project options.
+// Cross-referenced against SuiteConfigurationFragmentFields in the Burp desktop codebase.
+private val SENSITIVE_KEYS = setOf(
+    "password",             // socks proxy, platform auth, upstream proxy, client certs, app login
+    "certificate_password", // proxy request listener PKCS12 password
+    "hashed_key",           // Burp REST API key (SHA-256 of the actual key)
+)
+
+private const val REDACTED = "*****"
+
 fun filterConfigCredentials(json: String): String {
     return try {
-        val jsonElement = Json.parseToJsonElement(json)
-        val filteredElement = filterJsonElement(jsonElement)
-        Json.encodeToString(filteredElement)
-    } catch (e: Exception) {
-        throw RuntimeException("Failed to filter credentials", e)
+        Json.encodeToString(filterJsonElement(Json.parseToJsonElement(json)))
+    } catch (_: SerializationException) {
+        // Burp's export is expected to always be valid JSON. If it isn't, fail closed:
+        // do not echo the original or the parser's message (it quotes surrounding input,
+        // which can include credential values).
+        """{"error":"failed to parse config json"}"""
     }
 }
 
-private fun filterJsonElement(element: JsonElement): JsonElement {
-    return when (element) {
-        is JsonObject -> filterJsonObject(element)
-        is JsonArray -> filterJsonArray(element)
-        else -> element
-    }
+private fun filterJsonElement(element: JsonElement): JsonElement = when (element) {
+    is JsonObject -> JsonObject(element.mapValues { (key, value) -> filterValue(key, value) })
+    is JsonArray -> JsonArray(element.map(::filterJsonElement))
+    else -> element
 }
 
-private fun filterJsonObject(obj: JsonObject): JsonObject {
-    val filteredMap = obj.mapValues { (key, value) ->
-        when {
-            value is JsonPrimitive && value.isString && key == "password" -> 
-                JsonPrimitive("*****")
-            else -> filterJsonElement(value)
-        }
+private fun filterValue(key: String, value: JsonElement): JsonElement =
+    if (key.lowercase() in SENSITIVE_KEYS && value is JsonPrimitive && value.isString) {
+        JsonPrimitive(REDACTED)
+    } else {
+        filterJsonElement(value)
     }
-    return JsonObject(filteredMap)
-}
-
-private fun filterJsonArray(array: JsonArray): JsonArray {
-    val filteredList = array.map { element -> filterJsonElement(element) }
-    return JsonArray(filteredList)
-}
