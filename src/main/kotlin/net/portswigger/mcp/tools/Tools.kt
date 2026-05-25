@@ -305,6 +305,15 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
+    mcpTool<GetProxyHttpHistoryIndex>("Display single item within the proxy HTTP history by the specified index.") {
+        val requestResponse = api.proxy().history().getOrNull(index - 1)
+        if (requestResponse == null) {
+            "No HTTP history found at $index"
+        } else {
+            truncateIfNeeded(Json.encodeToString(requestResponse.toSerializableForm()))
+        }
+    }
+
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
         val allowed = runBlocking {
             checkHistoryPermissionOrDeny(HistoryAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
@@ -460,6 +469,9 @@ data class GetProxyHttpHistory(override val count: Int, override val offset: Int
 
 @Serializable
 data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetProxyHttpHistoryIndex(val index: Int)
 
 @Serializable
 data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated
