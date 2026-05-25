@@ -14,6 +14,7 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import burp.api.montoya.proxy.Proxy
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
+import burp.api.montoya.proxy.ProxyWebSocketMessage
 import burp.api.montoya.utilities.Base64Utils
 import burp.api.montoya.utilities.RandomUtils
 import burp.api.montoya.utilities.URLUtils
@@ -757,8 +758,205 @@ class ToolsKtTest {
                 assertEquals("Reached end of items", result3.expectTextContent())
             }
         }
+
+        @Test
+        fun `get proxy history with newestFirst should return items in reverse order`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+
+            every { proxyHistory[0].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /oldest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Oldest"
+            )
+            every { proxyHistory[1].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /middle HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Middle"
+            )
+            every { proxyHistory[2].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /newest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Newest"
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history", mapOf(
+                        "count" to 2,
+                        "offset" to 0,
+                        "newestFirst" to true
+                    )
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("GET /newest"), "First item should be newest")
+                assertTrue(text.contains("GET /middle"), "Second item should be middle")
+                assertFalse(text.contains("GET /oldest"), "Oldest should not be in first page")
+            }
+        }
+
+        @Test
+        fun `get proxy history with newestFirst false should return items in original order`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+
+            every { proxyHistory[0].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /oldest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Oldest"
+            )
+            every { proxyHistory[1].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /middle HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Middle"
+            )
+            every { proxyHistory[2].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /newest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = "Newest"
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history", mapOf(
+                        "count" to 2,
+                        "offset" to 0,
+                        "newestFirst" to false
+                    )
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("GET /oldest"), "First item should be oldest")
+                assertTrue(text.contains("GET /middle"), "Second item should be middle")
+                assertFalse(text.contains("GET /newest"), "Newest should not be in first page")
+            }
+        }
     }
-    
+
+    @Nested
+    inner class HistoryCountToolsTests {
+        @Test
+        fun `get proxy http history count should return total count`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history_count", mapOf<String, Any>()
+                )
+
+                delay(100)
+                result.expectTextContent("3")
+            }
+        }
+
+        @Test
+        fun `get proxy http history count with regex should return filtered count`() {
+            val proxy = mockk<Proxy>()
+            val fullHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+            val filteredHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns fullHistory
+            every { proxy.history(any()) } returns filteredHistory
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history_count", mapOf(
+                        "regex" to "example\\.com"
+                    )
+                )
+
+                delay(100)
+                result.expectTextContent("2")
+            }
+        }
+
+        @Test
+        fun `get proxy websocket history count should return total count`() {
+            val proxy = mockk<Proxy>()
+            val wsHistory = listOf(
+                mockk<ProxyWebSocketMessage>(),
+                mockk<ProxyWebSocketMessage>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.webSocketHistory() } returns wsHistory
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_websocket_history_count", mapOf<String, Any>()
+                )
+
+                delay(100)
+                result.expectTextContent("2")
+            }
+        }
+
+        @Test
+        fun `get proxy websocket history count with regex should return filtered count`() {
+            val proxy = mockk<Proxy>()
+            val fullHistory = listOf(
+                mockk<ProxyWebSocketMessage>(),
+                mockk<ProxyWebSocketMessage>(),
+                mockk<ProxyWebSocketMessage>()
+            )
+            val filteredHistory = listOf(
+                mockk<ProxyWebSocketMessage>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.webSocketHistory() } returns fullHistory
+            every { proxy.webSocketHistory(any()) } returns filteredHistory
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_websocket_history_count", mapOf(
+                        "regex" to "ws://example"
+                    )
+                )
+
+                delay(100)
+                result.expectTextContent("1")
+            }
+        }
+    }
+
     @Nested
     inner class CollaboratorToolsTests {
         private val collaborator = mockk<Collaborator>()
