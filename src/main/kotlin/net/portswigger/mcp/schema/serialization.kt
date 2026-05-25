@@ -56,7 +56,7 @@ fun ProxyHttpRequestResponse.toSerializableForm(): HttpRequestResponse {
 fun OrganizerItem.toSerializableForm(): OrganizerItemDetails {
     return OrganizerItemDetails(
         id = id(),
-        status = status().name,
+        status = status().displayName(),
         request = request()?.toString() ?: "<no request>",
         response = response()?.toString() ?: "<no response>",
         notes = annotations().notes()
