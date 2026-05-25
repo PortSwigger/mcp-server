@@ -5,7 +5,7 @@ ktor = "3.3.1"
 
 # Runtime Dependencies
 kotlinx-serialization = "1.9.0"
-mcp-sdk = "0.7.4"
+mcp-sdk = "0.12.0"
 burp-montoya = "2025.10"
 
 # Test Dependencies

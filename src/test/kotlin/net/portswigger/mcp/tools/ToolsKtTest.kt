@@ -22,8 +22,8 @@ import io.mockk.*
 import java.net.InetAddress
 import java.time.ZonedDateTime
 import java.util.Optional
-import io.modelcontextprotocol.kotlin.sdk.CallToolResultBase
-import io.modelcontextprotocol.kotlin.sdk.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -81,7 +81,7 @@ class ToolsKtTest {
         mockkStatic(HttpRequest::class)
     }
 
-    private fun CallToolResultBase?.expectTextContent(
+    private fun CallToolResult?.expectTextContent(
         expected: String? = null,
     ): String {
         assertNotNull(this, "Tool result cannot be null")
