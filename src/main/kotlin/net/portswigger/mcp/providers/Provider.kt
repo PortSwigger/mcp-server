@@ -9,6 +9,9 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import javax.swing.JFileChooser
 import kotlin.io.path.exists
+import kotlin.io.path.isDirectory
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
@@ -68,14 +71,20 @@ class ClaudeDesktopProvider(private val logging: Logging, private val proxyJarMa
         val os = System.getProperty("os.name").lowercase()
         val home = System.getProperty("user.home")
 
-        val basePath = when {
-            os.contains("win") -> Path.of(home, "AppData", "Roaming", "Claude")
-            os.contains("mac") || os.contains("darwin") -> Path.of(home, "Library", "Application Support", "Claude")
-            os.contains("linux") -> Path.of(home, ".config", "Claude")
+        val candidatePaths = when {
+            os.contains("win") -> windowsCandidatePaths(home)
+            os.contains("mac") || os.contains("darwin") -> listOf(
+                Path.of(home, "Library", "Application Support", "Claude")
+            )
+            os.contains("linux") -> listOf(Path.of(home, ".config", "Claude"))
             else -> return null
         }
 
-        if (!basePath.exists()) return null
+        val existingPaths = candidatePaths.filter { it.exists() }
+        if (existingPaths.size > 1) {
+            logging.logToOutput("Warning: multiple Claude Desktop config directories found; using ${existingPaths.first()}: $existingPaths")
+        }
+        val basePath = existingPaths.firstOrNull() ?: return null
 
         val configFile = basePath.resolve(claudeConfigFileName)
         if (!configFile.exists()) {
@@ -83,6 +92,23 @@ class ClaudeDesktopProvider(private val logging: Logging, private val proxyJarMa
         }
 
         return configFile
+    }
+
+    internal fun windowsCandidatePaths(home: String): List<Path> {
+        val traditional = Path.of(home, "AppData", "Roaming", "Claude")
+
+        // Windows Store installs place config under a package directory with a random suffix:
+        // AppData\Local\Packages\Claude_<suffix>\LocalCache\Roaming\Claude
+        val packagesDir = Path.of(home, "AppData", "Local", "Packages")
+        val storePaths = if (packagesDir.exists()) {
+            packagesDir.listDirectoryEntries()
+                .filter { it.isDirectory() && it.name.startsWith("Claude_") }
+                .map { it.resolve("LocalCache").resolve("Roaming").resolve("Claude") }
+        } else {
+            emptyList()
+        }
+
+        return listOf(traditional) + storePaths
     }
 
     private fun createDefaultConfig(path: Path): Boolean {
