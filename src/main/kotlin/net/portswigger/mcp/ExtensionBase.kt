@@ -6,6 +6,7 @@ import net.portswigger.mcp.config.ConfigUi
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.providers.ClaudeDesktopProvider
 import net.portswigger.mcp.providers.ManualProxyInstallerProvider
+import net.portswigger.mcp.providers.OpenCodeProvider
 import net.portswigger.mcp.providers.ProxyJarManager
 
 @Suppress("unused")
@@ -22,6 +23,7 @@ class ExtensionBase : BurpExtension {
         val configUi = ConfigUi(
             config = config, providers = listOf(
                 ClaudeDesktopProvider(api.logging(), proxyJarManager),
+                OpenCodeProvider(api.logging()),
                 ManualProxyInstallerProvider(api.logging(), proxyJarManager),
             )
         )

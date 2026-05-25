@@ -9,6 +9,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import javax.swing.JFileChooser
 import kotlin.io.path.exists
+import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
@@ -17,6 +18,60 @@ interface Provider {
     val installButtonText: String
     val confirmationText: String?
     fun install(config: McpConfig): String?
+}
+
+class OpenCodeProvider(
+    private val logging: Logging,
+    private val userHome: Path = Path.of(System.getProperty("user.home"))
+) : Provider {
+
+    private val schemaKey = "\$schema"
+    private val configFileName = "opencode.json"
+    private val serverName = "burp"
+
+    override val name = "OpenCode"
+    override val installButtonText = "Install to $name"
+    override val confirmationText =
+        "Install to $name?\nThis will create or update $name's global MCP configuration ($configFileName)."
+
+    override fun install(config: McpConfig): String {
+        val path = configFilePath()
+        path.parent.createDirectories()
+
+        val content = if (path.exists()) {
+            Json.parseToJsonElement(path.readText()).jsonObject.toMutableMap()
+        } else {
+            mutableMapOf(
+                schemaKey to JsonPrimitive("https://opencode.ai/config.json"),
+                "mcp" to buildJsonObject {}
+            )
+        }
+
+        val burpServerConfig = buildJsonObject {
+            put("type", JsonPrimitive("remote"))
+            put("url", JsonPrimitive("http://${config.host}:${config.port}"))
+            put("enabled", JsonPrimitive(true))
+        }
+
+        val mcp = content["mcp"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
+        mcp[serverName] = burpServerConfig
+        content["mcp"] = JsonObject(mcp)
+        content.putIfAbsent(schemaKey, JsonPrimitive("https://opencode.ai/config.json"))
+
+        val json = Json {
+            prettyPrint = true
+            encodeDefaults = true
+        }
+        path.writeText(json.encodeToString(JsonObject.serializer(), JsonObject(content)))
+
+        logging.logToOutput("Installed Burp MCP Server to OpenCode config")
+
+        return "Installation successful. Please restart $name if it is currently running."
+    }
+
+    private fun configFilePath(): Path {
+        return userHome.resolve(".config").resolve("opencode").resolve(configFileName)
+    }
 }
 
 class ClaudeDesktopProvider(private val logging: Logging, private val proxyJarManager: ProxyJarManager) : Provider {
