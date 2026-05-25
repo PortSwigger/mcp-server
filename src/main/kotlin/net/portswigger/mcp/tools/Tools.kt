@@ -42,6 +42,25 @@ private fun truncateIfNeeded(serialized: String): String {
     }
 }
 
+/**
+ * Normalizes HTTP content line endings from MCP clients.
+ *
+ * MCP clients (e.g. Claude Code) pass \r\n as literal escape sequences in JSON
+ * tool parameters, which arrive as the 4-character text sequences backslash-r
+ * and backslash-n rather than actual CR (0x0D) and LF (0x0A) bytes.
+ * This produces malformed HTTP that strict servers (e.g. Apache-Coyote) reject
+ * with 400 Bad Request.
+ *
+ * This function converts both literal escape sequences and actual line endings
+ * into proper HTTP CRLF line termination.
+ */
+private fun normalizeHttpContent(content: String): String = content
+    .replace("\\r\\n", "\n")   // Literal \r\n escape sequences → LF
+    .replace("\\n", "\n")      // Remaining literal \n → LF
+    .replace("\\r", "")        // Remaining literal \r → remove
+    .replace("\r", "")          // Actual CR → remove
+    .replace("\n", "\r\n")      // All LF → proper CRLF
+
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
@@ -55,7 +74,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         api.logging().logToOutput("MCP HTTP/1.1 request: $targetHostname:$targetPort")
 
-        val fixedContent = content.replace("\r", "").replace("\n", "\r\n")
+        val fixedContent = normalizeHttpContent(content)
 
         val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
         val response = api.http().sendRequest(request)
@@ -115,12 +134,14 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpTool<CreateRepeaterTab>("Creates a new Repeater tab with the specified HTTP request and optional tab name. Make sure to use carriage returns appropriately.") {
-        val request = HttpRequest.httpRequest(toMontoyaService(), content)
+        val fixedContent = normalizeHttpContent(content)
+        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
         api.repeater().sendToRepeater(request, tabName)
     }
 
     mcpTool<SendToIntruder>("Sends an HTTP request to Intruder with the specified HTTP request and optional tab name. Make sure to use carriage returns appropriately.") {
-        val request = HttpRequest.httpRequest(toMontoyaService(), content)
+        val fixedContent = normalizeHttpContent(content)
+        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
         api.intruder().sendToIntruder(request, tabName)
     }
 
