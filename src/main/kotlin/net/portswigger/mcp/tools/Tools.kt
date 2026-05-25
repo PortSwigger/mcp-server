@@ -307,10 +307,10 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
         val allowed = runBlocking {
-            checkHistoryPermissionOrDeny(HistoryAccessType.HTTP_HISTORY, config, api, "HTTP history")
+            checkHistoryPermissionOrDeny(HistoryAccessType.ORGANIZER, config, api, "Organizer")
         }
         if (!allowed) {
-            return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
+            return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
         }
 
         api.organizer().items().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
@@ -318,10 +318,10 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpPaginatedTool<GetOrganizerItemsRegex>("Displays items matching a specified regex within the Organizer tab") {
         val allowed = runBlocking {
-            checkHistoryPermissionOrDeny(HistoryAccessType.HTTP_HISTORY, config, api, "HTTP history")
+            checkHistoryPermissionOrDeny(HistoryAccessType.ORGANIZER, config, api, "Organizer")
         }
         if (!allowed) {
-            return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
+            return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
         }
 
         val compiledRegex = Pattern.compile(regex)

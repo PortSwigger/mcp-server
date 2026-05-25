@@ -38,6 +38,16 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
             }
         }
 
+    private var _alwaysAllowOrganizer by storage.boolean(false)
+    var alwaysAllowOrganizer: Boolean
+        get() = _alwaysAllowOrganizer
+        set(value) {
+            if (_alwaysAllowOrganizer != value) {
+                _alwaysAllowOrganizer = value
+                notifyHistoryAccessChanged()
+            }
+        }
+
     private var _autoApproveTargets by storage.stringList("")
     private val targetsChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
     private val historyAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()

@@ -17,6 +17,7 @@ class ServerConfigurationPanel(
 
     private lateinit var alwaysAllowHttpHistoryCheckBox: JCheckBox
     private lateinit var alwaysAllowWebSocketHistoryCheckBox: JCheckBox
+    private lateinit var alwaysAllowOrganizerCheckBox: JCheckBox
 
     init {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -77,6 +78,14 @@ class ServerConfigurationPanel(
             config.requireHistoryAccessApproval
         ) { config.alwaysAllowWebSocketHistory = it }
         add(alwaysAllowWebSocketHistoryCheckBox)
+        add(createVerticalStrut(Design.Spacing.SM))
+
+        alwaysAllowOrganizerCheckBox = createIndentedCheckBox(
+            "Always allow Organizer access",
+            config.alwaysAllowOrganizer,
+            config.requireHistoryAccessApproval
+        ) { config.alwaysAllowOrganizer = it }
+        add(alwaysAllowOrganizerCheckBox)
 
         add(validationErrorLabel)
     }
@@ -103,11 +112,14 @@ class ServerConfigurationPanel(
             if (!enabled) {
                 config.alwaysAllowHttpHistory = false
                 config.alwaysAllowWebSocketHistory = false
+                config.alwaysAllowOrganizer = false
                 alwaysAllowHttpHistoryCheckBox.isSelected = false
                 alwaysAllowWebSocketHistoryCheckBox.isSelected = false
+                alwaysAllowOrganizerCheckBox.isSelected = false
             }
             alwaysAllowHttpHistoryCheckBox.isEnabled = enabled
             alwaysAllowWebSocketHistoryCheckBox.isEnabled = enabled
+            alwaysAllowOrganizerCheckBox.isEnabled = enabled
         }
     }
 
@@ -115,6 +127,7 @@ class ServerConfigurationPanel(
         SwingUtilities.invokeLater {
             alwaysAllowHttpHistoryCheckBox.isSelected = config.alwaysAllowHttpHistory
             alwaysAllowWebSocketHistoryCheckBox.isSelected = config.alwaysAllowWebSocketHistory
+            alwaysAllowOrganizerCheckBox.isSelected = config.alwaysAllowOrganizer
         }
     }
 
