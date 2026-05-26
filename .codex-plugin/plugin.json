@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "name": "burp-mcp-server",
+  "version": "1.0.0",
+  "registry": { "visibility": "public" },
+  "manifest": {
+    "homepage": "https://github.com/PortSwigger/mcp-server",
+    "repository": "https://github.com/PortSwigger/mcp-server",
+    "license": "Proprietary"
+  },
+  "tools": [
+    { "id": "burp_scan", "name": "scan", "description": "Run Burp Suite security scan" },
+    { "id": "burp_proxy", "name": "proxy", "description": "Start Burp Suite proxy" }
+  ]
+}
