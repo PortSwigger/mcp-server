@@ -1,12 +1,15 @@
 package net.portswigger.mcp.tools
 
-import io.modelcontextprotocol.kotlin.sdk.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.PromptMessageContent
-import io.modelcontextprotocol.kotlin.sdk.TextContent
-import io.modelcontextprotocol.kotlin.sdk.Tool
+import io.modelcontextprotocol.kotlin.sdk.server.ClientConnection
 import io.modelcontextprotocol.kotlin.sdk.server.Server
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.ContentBlock
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.serializer
 import net.portswigger.mcp.schema.asInputSchema
 import kotlin.experimental.ExperimentalTypeInference
@@ -14,32 +17,32 @@ import kotlin.experimental.ExperimentalTypeInference
 @OptIn(InternalSerializationApi::class)
 inline fun <reified I : Any> Server.mcpTool(
     description: String,
-    crossinline execute: I.() -> List<PromptMessageContent>
+    crossinline execute: I.() -> List<ContentBlock>
 ) {
     val toolName = I::class.simpleName?.toLowerSnakeCase() ?: error("Couldn't find name for ${I::class}")
+    val serializer = I::class.serializer()
+    val inputSchema = I::class.asInputSchema()
 
-    addTool(
-        name = toolName,
-        description = description,
-        inputSchema = I::class.asInputSchema(),
-        handler = { request ->
-            try {
-                CallToolResult(
-                    content = execute(
-                        Json.decodeFromJsonElement(
-                            I::class.serializer(),
-                            request.arguments
-                        )
+    val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, request ->
+        try {
+            CallToolResult(
+                content = execute(
+                    Json.decodeFromJsonElement(
+                        serializer,
+                        request.params.arguments ?: JsonObject(emptyMap())
                     )
-                )
-            } catch (e: Exception) {
-                CallToolResult(
-                    content = listOf(TextContent("Error: ${e.message}")),
-                    isError = true
-                )
-            }
+                ),
+                isError = false
+            )
+        } catch (e: Exception) {
+            CallToolResult(
+                content = listOf(TextContent("Error: ${e.message}")),
+                isError = true
+            )
         }
-    )
+    }
+
+    addTool(name = toolName, description = description, inputSchema = inputSchema, handler = handler)
 }
 
 @OptIn(ExperimentalTypeInference::class)
@@ -114,18 +117,12 @@ inline fun <reified I : Paginated> Server.mcpPaginatedTool(
 inline fun Server.mcpTool(
     name: String,
     description: String,
-    crossinline execute: () -> List<PromptMessageContent>
+    crossinline execute: () -> List<ContentBlock>
 ) {
-    addTool(
-        name = name,
-        description = description,
-        inputSchema = Tool.Input(),
-        handler = {
-            CallToolResult(
-                content = execute()
-            )
-        }
-    )
+    val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
+        CallToolResult(content = execute(), isError = false)
+    }
+    addTool(name = name, description = description, inputSchema = ToolSchema(), handler = handler)
 }
 
 inline fun Server.mcpTool(
@@ -133,16 +130,10 @@ inline fun Server.mcpTool(
     description: String,
     crossinline execute: () -> String
 ) {
-    addTool(
-        name = name,
-        description = description,
-        inputSchema = Tool.Input(),
-        handler = {
-            CallToolResult(
-                content = listOf(TextContent(execute()))
-            )
-        }
-    )
+    val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
+        CallToolResult(content = listOf(TextContent(execute())), isError = false)
+    }
+    addTool(name = name, description = description, inputSchema = ToolSchema(), handler = handler)
 }
 
 fun String.toLowerSnakeCase(): String {
@@ -157,4 +148,3 @@ interface Paginated {
     val count: Int
     val offset: Int
 }
-
