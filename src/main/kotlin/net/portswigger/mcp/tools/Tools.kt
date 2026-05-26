@@ -117,13 +117,13 @@ private fun normalizePrelude(prelude: String): String = prelude
 
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
-    mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
+    mcpPaginatedBytesTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response. Response is paginated") {
         val allowed = runBlocking {
             HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
         }
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
-            return@mcpTool "Send HTTP request denied by Burp Suite"
+            return@mcpPaginatedBytesTool "Send HTTP request denied by Burp Suite"
         }
 
         api.logging().logToOutput("MCP HTTP/1.1 request: $targetHostname:$targetPort")
@@ -136,7 +136,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         response?.toString() ?: "<no response>"
     }
 
-    mcpTool<SendHttp2Request>("Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter.") {
+    mcpPaginatedBytesTool<SendHttp2Request>("Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter. Response is paginated") {
         val http2RequestDisplay = buildString {
             pseudoHeaders.forEach { (key, value) ->
                 val headerName = if (key.startsWith(":")) key else ":$key"
@@ -156,7 +156,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
-            return@mcpTool "Send HTTP request denied by Burp Suite"
+            return@mcpPaginatedBytesTool "Send HTTP request denied by Burp Suite"
         }
 
         api.logging().logToOutput("MCP HTTP/2 request: $targetHostname:$targetPort")
@@ -266,8 +266,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         mcpTool<GenerateCollaboratorPayload>(
             "Generates a Burp Collaborator payload URL for out-of-band (OOB) testing. " +
-            "Inject this payload into requests to detect server-side interactions (DNS lookups, HTTP requests, SMTP). " +
-            "Use get_collaborator_interactions with the returned payloadId to check for interactions."
+                    "Inject this payload into requests to detect server-side interactions (DNS lookups, HTTP requests, SMTP). " +
+                    "Use get_collaborator_interactions with the returned payloadId to check for interactions."
         ) {
             api.logging().logToOutput("MCP generating Collaborator payload${customData?.let { " with custom data" } ?: ""}")
 
@@ -283,8 +283,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         mcpTool<GetCollaboratorInteractions>(
             "Polls Burp Collaborator for out-of-band interactions (DNS, HTTP, SMTP). " +
-            "Optionally filter by payloadId from generate_collaborator_payload. " +
-            "Returns interaction details including type, timestamp, client IP, and protocol-specific data."
+                    "Optionally filter by payloadId from generate_collaborator_payload. " +
+                    "Returns interaction details including type, timestamp, client IP, and protocol-specific data."
         ) {
             api.logging().logToOutput("MCP polling Collaborator interactions${payloadId?.let { " for payload: $it" } ?: ""}")
 
@@ -438,8 +438,8 @@ data class SendHttp1Request(
     val content: String,
     override val targetHostname: String,
     override val targetPort: Int,
-    override val usesHttps: Boolean
-) : HttpServiceParams
+    override val usesHttps: Boolean, override val count: Int, override val offset: Int
+) : HttpServiceParams, Paginated
 
 @Serializable
 data class SendHttp2Request(
@@ -448,8 +448,8 @@ data class SendHttp2Request(
     val requestBody: String,
     override val targetHostname: String,
     override val targetPort: Int,
-    override val usesHttps: Boolean
-) : HttpServiceParams
+    override val usesHttps: Boolean, override val count: Int, override val offset: Int
+) : HttpServiceParams, Paginated
 
 @Serializable
 data class CreateRepeaterTab(
