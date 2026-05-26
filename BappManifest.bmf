@@ -3,7 +3,7 @@ ExtensionType: 1
 Name: MCP Server
 RepoName: mcp-server
 ScreenVersion: 1.3.0
-SerialVersion: 9
+SerialVersion: 10
 MinPlatformVersion: 26
 ProOnly: False
 Author: Daniel S, PortSwigger & Daniel Allen, PortSwigger
