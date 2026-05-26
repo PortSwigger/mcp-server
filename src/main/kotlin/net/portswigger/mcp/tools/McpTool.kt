@@ -31,7 +31,8 @@ inline fun <reified I : Any> Server.mcpTool(
                         serializer,
                         request.params.arguments ?: JsonObject(emptyMap())
                     )
-                )
+                ),
+                isError = false
             )
         } catch (e: Exception) {
             CallToolResult(
@@ -119,7 +120,7 @@ inline fun Server.mcpTool(
     crossinline execute: () -> List<ContentBlock>
 ) {
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
-        CallToolResult(content = execute())
+        CallToolResult(content = execute(), isError = false)
     }
     addTool(name = name, description = description, inputSchema = ToolSchema(), handler = handler)
 }
@@ -130,7 +131,7 @@ inline fun Server.mcpTool(
     crossinline execute: () -> String
 ) {
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
-        CallToolResult(content = listOf(TextContent(execute())))
+        CallToolResult(content = listOf(TextContent(execute())), isError = false)
     }
     addTool(name = name, description = description, inputSchema = ToolSchema(), handler = handler)
 }
