@@ -109,16 +109,57 @@ The extension has an installer which will automatically configure the client set
 If you want to install the MCP server manually you can either use the extension's SSE server directly or the packaged
 Stdio proxy server.
 
+### Client configuration examples
+
+The examples below show how to configure some popular MCP clients to connect to Burp Suite.
+
+#### OpenCode
+
+OpenCode can connect directly to the Burp SSE endpoint using a remote MCP server definition.
+
+Add the following to `~/.config/opencode/opencode.json` or your project `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "burp": {
+      "type": "remote",
+      "url": "http://127.0.0.1:9876",
+      "enabled": true
+    }
+  }
+}
+```
+
+#### GitHub Copilot CLI
+
+GitHub Copilot CLI can connect directly to the Burp SSE endpoint:
+
+```bash
+copilot mcp add --transport sse burp http://127.0.0.1:9876
+```
+
+You can verify the configuration with:
+
+```bash
+copilot mcp list
+copilot mcp get burp
+```
+
+#### Codex CLI
+
+Codex CLI works well with the packaged stdio proxy server. You can add the Burp proxy with:
+
+```bash
+codex mcp add burp -- java -jar /path/to/mcp-proxy-all.jar --sse-url http://127.0.0.1:9876
+```
+
+This adds a stdio MCP server entry that forwards requests to the Burp SSE endpoint.
+
 ### SSE MCP Server
 In order to use the SSE server directly you can just provide the url for the server in your client's configuration. Depending
-on your client and your configuration in the extension this may be with or without the `/sse` path.
-```
-http://127.0.0.1:9876
-```
-or
-```
-http://127.0.0.1:9876/sse
-```
+on your client and your configuration in the extension this may be without the `/sse` path (`http://127.0.0.1:9876`) or with the `/sse` path (`http://127.0.0.1:9876/sse`).
 
 ### Stdio MCP Proxy Server
 The source code for the proxy server can be found here: [MCP Proxy Server](https://github.com/PortSwigger/mcp-proxy)
@@ -129,7 +170,13 @@ passing requests to the SSE MCP server extension.
 If you want to use the Stdio proxy server you can use the extension's installer option to extract the proxy server jar.
 Once you have the jar you can add the following command and args to your client configuration:
 ```
-/path/to/packaged/burp/java -jar /path/to/proxy/jar/mcp-proxy-all.jar --sse-url http://127.0.0.1:9876
+/path/to/java -jar /path/to/mcp-proxy-all.jar --sse-url http://127.0.0.1:9876
+```
+
+If you have issues discovering tools when using Codex CLI, explicitly setting `model_reasoning_effort` can help:
+
+```
+codex -c model_reasoning_effort='"high"' mcp add burp -- java -jar /path/to/mcp-proxy-all.jar --sse-url http://127.0.0.1:9876
 ```
 
 ### Creating / modifying tools
