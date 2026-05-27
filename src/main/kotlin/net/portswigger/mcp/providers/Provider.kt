@@ -8,6 +8,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import javax.swing.JFileChooser
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
@@ -20,6 +21,67 @@ interface Provider {
     val installButtonText: String
     val confirmationText: String?
     fun install(config: McpConfig): String?
+}
+
+class GitHubCopilotCliProvider(
+    private val logging: Logging,
+    private val proxyJarManager: ProxyJarManager,
+    private val userHome: Path = Path.of(System.getProperty("user.home"))
+) : Provider {
+
+    private val configFileName = "mcp-config.json"
+    private val serverName = "burp"
+
+    override val name = "GitHub Copilot CLI"
+    override val installButtonText = "Install to $name"
+    override val confirmationText =
+        "Install to $name?\nThis will create or update $name's MCP configuration ($configFileName)."
+
+    override fun install(config: McpConfig): String {
+        val proxyJarFile = proxyJarManager.getProxyJar()
+        val path = configFilePath()
+        path.parent.createDirectories()
+
+        val content: MutableMap<String, JsonElement> = if (path.exists()) {
+            Json.parseToJsonElement(path.readText()).jsonObject.toMutableMap<String, JsonElement>()
+        } else {
+            mutableMapOf("mcpServers" to buildJsonObject {})
+        }
+
+        val burpServerConfig = buildJsonObject {
+            put("type", JsonPrimitive("local"))
+            put("command", JsonPrimitive("java"))
+            put("args", buildJsonArray {
+                add(JsonPrimitive("-jar"))
+                add(JsonPrimitive(proxyJarFile.toString()))
+                add(JsonPrimitive("--sse-url"))
+                add(JsonPrimitive("http://${config.host}:${config.port}"))
+            })
+            put("tools", buildJsonArray {
+                add(JsonPrimitive("*"))
+            })
+        }
+
+        val mcpServers = mutableMapOf<String, JsonElement>().apply {
+            content["mcpServers"]?.jsonObject?.let { putAll(it) }
+        }
+        mcpServers[serverName] = burpServerConfig
+        content["mcpServers"] = JsonObject(mcpServers)
+
+        val json = Json {
+            prettyPrint = true
+            encodeDefaults = true
+        }
+        path.writeText(json.encodeToString(JsonObject.serializer(), JsonObject(content)))
+
+        logging.logToOutput("Installed Burp MCP Server to GitHub Copilot CLI config")
+
+        return "Installation successful. Please restart $name if it is currently running."
+    }
+
+    private fun configFilePath(): Path {
+        return userHome.resolve(".copilot").resolve(configFileName)
+    }
 }
 
 class ClaudeDesktopProvider(private val logging: Logging, private val proxyJarManager: ProxyJarManager) : Provider {
