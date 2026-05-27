@@ -1,0 +1,30 @@
+name: Release burp-mcp-all.jar
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+      - name: setup java to use gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: setup gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: build to create burp-mcp-all.jar
+        run: ./gradlew build
+
+      - name: put burp-mcp-all.jar in release package
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/libs/burp-mcp-all.jar
