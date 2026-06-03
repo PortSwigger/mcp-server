@@ -2,6 +2,7 @@ package net.portswigger.mcp.config
 
 import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
+import net.portswigger.mcp.session.SessionContext
 import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.properties.ReadWriteProperty
@@ -10,6 +11,9 @@ import kotlin.reflect.KProperty
 private const val TARGET_SEPARATOR = "\n"
 
 class McpConfig(storage: PersistedObject, private val logging: Logging) {
+
+    /** Current active SessionContext — non-persisted, in-memory only. */
+    @Volatile var sessionContext: SessionContext? = null
 
     var enabled by storage.boolean(true)
     var configEditingTooling by storage.boolean(false)
