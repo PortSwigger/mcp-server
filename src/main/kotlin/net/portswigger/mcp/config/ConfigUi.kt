@@ -98,6 +98,9 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         if (::autoApproveTargetsPanel.isInitialized) {
             autoApproveTargetsPanel.cleanup()
         }
+        if (::serverConfigurationPanel.isInitialized) {
+            serverConfigurationPanel.stopDedupTimer()
+        }
     }
 
     fun onEnabledToggled(listener: (Boolean) -> Unit) {
