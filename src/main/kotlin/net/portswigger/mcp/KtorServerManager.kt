@@ -25,6 +25,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
 
     private var server: EmbeddedServer<*, *>? = null
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var currentConfig: net.portswigger.mcp.config.McpConfig? = null
 
     override fun start(config: McpConfig, callback: (ServerState) -> Unit) {
         callback(ServerState.Starting)
@@ -97,7 +98,9 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                         mcpServer
                     }
 
+                    currentConfig = config
                     val sessionContext = if (config.tokenDeduplicationEnabled) SessionContext() else null
+                    config.sessionContext = sessionContext
                     mcpServer.registerTools(api, config, sessionContext)
                 }.apply {
                     start(wait = false)
@@ -120,6 +123,8 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
             try {
                 server?.stop(1000, 5000)
                 server = null
+                currentConfig?.sessionContext = null
+                currentConfig = null
                 api.logging().logToOutput("Stopped MCP server")
                 callback(ServerState.Stopped)
             } catch (e: Exception) {
