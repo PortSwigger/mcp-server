@@ -94,6 +94,14 @@ class ServerConfigurationPanel(
             config.filterConfigCredentials
         ) { config.filterConfigCredentials = it }
         add(filterConfigCredentialsCheckBox)
+        add(createVerticalStrut(Design.Spacing.MD))
+
+        val tokenDeduplicationCheckBox = createCheckBoxWithSubtitle(
+            "Deduplicate session headers (token optimisation)",
+            "Saves ~60–78% of tokens on authenticated sessions by replacing repeated headers with compact references",
+            config.tokenDeduplicationEnabled
+        ) { config.tokenDeduplicationEnabled = it }
+        add(tokenDeduplicationCheckBox)
 
         add(validationErrorLabel)
     }
