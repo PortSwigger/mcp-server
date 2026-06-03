@@ -14,6 +14,7 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.server.mcp
 import net.portswigger.mcp.config.McpConfig
+import net.portswigger.mcp.session.SessionContext
 import net.portswigger.mcp.tools.registerTools
 import java.net.URI
 import java.util.concurrent.ExecutorService
@@ -96,7 +97,8 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                         mcpServer
                     }
 
-                    mcpServer.registerTools(api, config)
+                    val sessionContext = if (config.tokenDeduplicationEnabled) SessionContext() else null
+                    mcpServer.registerTools(api, config, sessionContext)
                 }.apply {
                     start(wait = false)
                 }
