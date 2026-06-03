@@ -15,6 +15,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.toSerializableForm
+import net.portswigger.mcp.session.SessionContext
 import net.portswigger.mcp.security.DataAccessSecurity
 import net.portswigger.mcp.security.DataAccessType
 import net.portswigger.mcp.security.HttpRequestSecurity
@@ -115,7 +116,7 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\r", "")          // Actual CR → remove
     .replace("\n", "\r\n")      // All LF → proper CRLF
 
-fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
+fun Server.registerTools(api: MontoyaApi, config: McpConfig, sessionContext: SessionContext? = null) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {
@@ -132,6 +133,11 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
         val response = api.http().sendRequest(request)
+
+        val statusCode1 = response?.response()?.statusCode()?.toInt() ?: 0
+        if (statusCode1 == 401 || statusCode1 == 403) {
+            sessionContext?.invalidateAuth()
+        }
 
         response?.toString() ?: "<no response>"
     }
@@ -165,6 +171,11 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody)
         val response = api.http().sendRequest(request, HttpMode.HTTP_2)
+
+        val statusCode2 = response?.response()?.statusCode()?.toInt() ?: 0
+        if (statusCode2 == 401 || statusCode2 == 403) {
+            sessionContext?.invalidateAuth()
+        }
 
         response?.toString() ?: "<no response>"
     }
@@ -312,7 +323,19 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+        val history = api.proxy().history()
+        if (sessionContext != null && sessionContext.isEmpty() && history.isNotEmpty()) {
+            sessionContext.fingerprintFromRawRequest(history[0].request()?.toString() ?: "")
+        }
+
+        val items = history.asSequence()
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(sessionContext))) }
+
+        if (sessionContext != null && sessionContext.needsDeclaration() && sessionContext.declarationBlock().isNotEmpty()) {
+            sequenceOf(sessionContext.declarationBlock()) + items
+        } else {
+            items
+        }
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
@@ -325,7 +348,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val compiledRegex = Pattern.compile(regex)
         api.proxy().history { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(sessionContext))) }
     }
 
     mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
