@@ -45,9 +45,12 @@ fun burp.api.montoya.http.message.HttpRequestResponse.toSerializableForm(): Http
     )
 }
 
-fun ProxyHttpRequestResponse.toSerializableForm(): HttpRequestResponse {
+fun ProxyHttpRequestResponse.toSerializableForm(
+    sessionContext: net.portswigger.mcp.session.SessionContext? = null
+): HttpRequestResponse {
+    val rawRequest = request()?.toString() ?: "<no request>"
     return HttpRequestResponse(
-        request = request()?.toString() ?: "<no request>",
+        request = sessionContext?.compressRequest(rawRequest) ?: rawRequest,
         response = response()?.toString() ?: "<no response>",
         notes = annotations().notes()
     )
