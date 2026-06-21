@@ -9,6 +9,8 @@ import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.scanner.AuditConfiguration
+import burp.api.montoya.scanner.BuiltInAuditConfiguration
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -262,6 +264,35 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             api.siteMap().issues().asSequence().map { Json.encodeToString(it.toSerializableForm()) }
         }
 
+        mcpTool<ActiveAuditProxyHistoryItem>(
+            "Performs an active audit (active scan) on exactly one item already present in the proxy HTTP history, " +
+                    "identified by its 1-based index. Only the single item's finalRequest is scanned; no crawling is performed " +
+                    "and no other targets can be specified. The request is rejected if the index is out of range or if the " +
+                    "item's URL is not in the Burp Target Scope. Returns the index, method, and URL of the request that was scanned."
+        ) {
+            val history = api.proxy().history()
+            if (index < 1 || index > history.size) {
+                return@mcpTool "Refused: index $index is out of range. Proxy HTTP history contains ${history.size} item(s) (valid range: 1..${history.size})."
+            }
+
+            val item = history[index - 1]
+            val finalRequest = item.finalRequest()
+            val url = finalRequest.url()
+
+            if (!api.scope().isInScope(url)) {
+                return@mcpTool "Refused: URL $url is not in the Burp Target Scope. Add it to scope before scanning."
+            }
+
+            api.logging().logToOutput("MCP active audit on proxy history item #$index: ${finalRequest.method()} $url")
+
+            val audit = api.scanner().startAudit(
+                AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS)
+            )
+            audit.addRequest(finalRequest)
+
+            "Started active audit on proxy history item #$index (${finalRequest.method()} $url)"
+        }
+
         val collaboratorClient by lazy { api.collaborator().createClient() }
 
         mcpTool<GenerateCollaboratorPayload>(
@@ -512,6 +543,9 @@ data class SetActiveEditorContents(val text: String)
 
 @Serializable
 data class GetScannerIssues(override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class ActiveAuditProxyHistoryItem(val index: Int)
 
 @Serializable
 data class GetProxyHttpHistory(override val count: Int, override val offset: Int) : Paginated
