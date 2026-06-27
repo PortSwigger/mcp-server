@@ -43,6 +43,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val validationErrorLabel = WarningLabel()
     private val hostField = JTextField(15)
     private val portField = JTextField(5)
+    private val historyItemMaxCharsField = JTextField(6)
     private val reinstallNotice = WarningLabel("Make sure to reinstall after changing server settings")
 
     private lateinit var serverConfigurationPanel: ServerConfigurationPanel
@@ -63,6 +64,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         enabledToggle.setState(config.enabled, animate = false)
         hostField.text = config.host
         portField.text = config.port.toString()
+        historyItemMaxCharsField.text = config.historyItemMaxChars.toString()
 
         initializeComponents()
         buildUi()
@@ -74,7 +76,10 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         )
 
         advancedOptionsPanel = AdvancedOptionsPanel(
-            hostField = hostField, portField = portField, reinstallNotice = reinstallNotice
+            hostField = hostField,
+            portField = portField,
+            historyItemMaxCharsField = historyItemMaxCharsField,
+            reinstallNotice = reinstallNotice
         )
 
         autoApproveTargetsPanel = AutoApproveTargetsPanel(config = config)
@@ -107,6 +112,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     fun getConfig(): McpConfig {
         config.host = hostField.text
         portField.text.toIntOrNull()?.let { config.port = it }
+        historyItemMaxCharsField.text.toIntOrNull()?.let { config.historyItemMaxChars = it }
         return config
     }
 
