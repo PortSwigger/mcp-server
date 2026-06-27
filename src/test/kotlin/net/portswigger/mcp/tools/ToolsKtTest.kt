@@ -799,8 +799,58 @@ class ToolsKtTest {
                 assertEquals("Reached end of items", result3.expectTextContent())
             }
         }
+
+        @Test
+        fun `get proxy history by id returns the matching item`() {
+            val proxy = mockk<Proxy>()
+            val item1 = mockk<ProxyHttpRequestResponse>()
+            val item2 = mockk<ProxyHttpRequestResponse>()
+
+            every { item1.id() } returns 1
+            every { item2.id() } returns 2
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns listOf(item1, item2)
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { item2.toSerializableForm() } returns HttpRequestResponse(
+                id = 2,
+                request = "GET /two HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = null
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history_by_id", mapOf("id" to 2)
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("GET /two"), "Should return the item whose id matches")
+                assertTrue(text.contains("\"id\":2"), "Serialized item should expose its id")
+            }
+        }
+
+        @Test
+        fun `get proxy history by id returns not found for unknown id`() {
+            val proxy = mockk<Proxy>()
+            val item1 = mockk<ProxyHttpRequestResponse>()
+
+            every { item1.id() } returns 1
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns listOf(item1)
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history_by_id", mapOf("id" to 99)
+                )
+
+                delay(100)
+                result.expectTextContent("No proxy HTTP history item found with id 99")
+            }
+        }
     }
-    
+
     @Nested
     inner class CollaboratorToolsTests {
         private val collaborator = mockk<Collaborator>()
