@@ -28,6 +28,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import net.portswigger.mcp.KtorServerManager
 import net.portswigger.mcp.ServerState
 import net.portswigger.mcp.TestSseMcpClient
@@ -797,6 +799,34 @@ class ToolsKtTest {
                 
                 delay(100)
                 assertEquals("Reached end of items", result3.expectTextContent())
+            }
+        }
+
+        @Test
+        fun `get proxy history should return valid size limited JSON`() {
+            val proxy = mockk<Proxy>()
+            val historyItem = mockk<ProxyHttpRequestResponse>()
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns listOf(historyItem)
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { historyItem.toSerializableForm() } returns HttpRequestResponse(
+                request = "GET / HTTP/1.1\r\nX-Long: ${"\\\"😀".repeat(2_000)}",
+                response = "HTTP/1.1 200 OK\r\n\r\n${"😀".repeat(3_000)}",
+                notes = "keep me"
+            )
+
+            runBlocking {
+                val text = client.callTool(
+                    "get_proxy_http_history", mapOf("count" to 1, "offset" to 0)
+                ).expectTextContent()
+                val item = Json.parseToJsonElement(text).jsonObject
+
+                assertTrue(text.length <= 5_000)
+                assertEquals(setOf("request", "response", "notes"), item.keys)
+                assertTrue(item.getValue("request").jsonPrimitive.content.endsWith("... (truncated)"))
+                assertTrue(item.getValue("response").jsonPrimitive.content.endsWith("... (truncated)"))
+                assertEquals("keep me", item.getValue("notes").jsonPrimitive.content)
             }
         }
     }
