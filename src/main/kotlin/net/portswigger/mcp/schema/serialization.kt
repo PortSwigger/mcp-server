@@ -47,6 +47,9 @@ fun burp.api.montoya.http.message.HttpRequestResponse.toSerializableForm(): Http
 
 fun ProxyHttpRequestResponse.toSerializableForm(): HttpRequestResponse {
     return HttpRequestResponse(
+        // Burp's proxy history request number (the value shown in the Proxy > HTTP history UI),
+        // so MCP clients can reference a specific item by id instead of by list offset.
+        id = id(),
         request = request()?.toString() ?: "<no request>",
         response = response()?.toString() ?: "<no response>",
         notes = annotations().notes()
@@ -114,6 +117,9 @@ enum class AuditIssueConfidence {
 
 @Serializable
 data class HttpRequestResponse(
+    // Proxy history request number. Null for items that don't originate from proxy
+    // history (e.g. issue request/responses), so it's omitted from their JSON output.
+    val id: Int? = null,
     val request: String?,
     val response: String?,
     val notes: String?

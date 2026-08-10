@@ -328,6 +328,24 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
     }
 
+    mcpTool<GetProxyHttpHistoryById>(
+        "Retrieves a single proxy HTTP history item by its Burp request id (the number shown in the " +
+        "Proxy > HTTP history UI, also returned as the 'id' field by get_proxy_http_history). " +
+        "Lets you reference a specific request directly instead of paging through history by offset."
+    ) {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
+        }
+        if (!allowed) {
+            return@mcpTool "HTTP history access denied by Burp Suite"
+        }
+
+        val item = api.proxy().history().firstOrNull { it.id() == id }
+            ?: return@mcpTool "No proxy HTTP history item found with id $id"
+
+        truncateIfNeeded(Json.encodeToString(item.toSerializableForm()))
+    }
+
     mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
@@ -518,6 +536,9 @@ data class GetProxyHttpHistory(override val count: Int, override val offset: Int
 
 @Serializable
 data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetProxyHttpHistoryById(val id: Int)
 
 @Serializable
 data class GetOrganizerItems(override val count: Int, override val offset: Int) : Paginated
