@@ -50,11 +50,12 @@ class ToolsKtTest {
     private val testPort = findAvailablePort()
     private var serverStarted = false
     private val config: McpConfig
+    private val persistedObject: PersistedObject
     private val mockHeaders = mutableListOf<HttpHeader>()
     private val capturedRequest = slot<HttpRequest>()
 
     init {
-        val persistedObject = mockk<PersistedObject>().apply {
+        persistedObject = mockk<PersistedObject>().apply {
             every { getBoolean("enabled") } returns true
             every { getBoolean("configEditingTooling") } returns true
             every { getBoolean("requireHttpRequestApproval") } returns false
@@ -65,6 +66,7 @@ class ToolsKtTest {
             every { getString("host") } returns "127.0.0.1"
             every { getString("_autoApproveTargets") } returns ""
             every { getInteger("port") } returns testPort
+            every { getInteger("historyItemMaxChars") } returns 5000
             every { setBoolean(any(), any()) } returns Unit
             every { setString(any(), any()) } returns Unit
             every { setInteger(any(), any()) } returns Unit
@@ -799,8 +801,65 @@ class ToolsKtTest {
                 assertEquals("Reached end of items", result3.expectTextContent())
             }
         }
+
+        @Test
+        fun `history items are truncated to the configured max chars`() {
+            every { persistedObject.getInteger("historyItemMaxChars") } returns 20
+
+            val proxy = mockk<Proxy>()
+            val item = mockk<ProxyHttpRequestResponse>()
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns listOf(item)
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { item.toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /x HTTP/1.1",
+                response = "A".repeat(10000),
+                notes = null
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history", mapOf("count" to 1, "offset" to 0)
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.endsWith("... (truncated)"), "Output should be truncated")
+                assertFalse(text.contains("A".repeat(10000)), "Full response must not be present")
+            }
+        }
+
+        @Test
+        fun `history items are not truncated when max chars is zero`() {
+            every { persistedObject.getInteger("historyItemMaxChars") } returns 0
+
+            val proxy = mockk<Proxy>()
+            val item = mockk<ProxyHttpRequestResponse>()
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns listOf(item)
+
+            val longBody = "B".repeat(8000)
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { item.toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /y HTTP/1.1",
+                response = longBody,
+                notes = null
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_proxy_http_history", mapOf("count" to 1, "offset" to 0)
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertFalse(text.contains("... (truncated)"), "Output should not be truncated")
+                assertTrue(text.contains(longBody), "Full response should be present")
+            }
+        }
     }
-    
+
     @Nested
     inner class CollaboratorToolsTests {
         private val collaborator = mockk<Collaborator>()

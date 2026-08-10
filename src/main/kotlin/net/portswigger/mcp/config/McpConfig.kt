@@ -18,6 +18,11 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     var requireHttpRequestApproval by storage.boolean(true)
     var requireDataAccessApproval by storage.boolean(true)
 
+    // Per-item character cap applied when serializing recorded traffic (proxy/WebSocket
+    // history and Organizer items). 0 or negative means no truncation. Default mirrors the
+    // historical hard-coded limit of 5000.
+    var historyItemMaxChars by storage.int(5000)
+
     private var _alwaysAllowHttpHistory by storage.boolean(false)
     var alwaysAllowHttpHistory: Boolean
         get() = _alwaysAllowHttpHistory

@@ -35,9 +35,9 @@ private suspend fun checkDataAccessOrDeny(
     return true
 }
 
-private fun truncateIfNeeded(serialized: String): String {
-    return if (serialized.length > 5000) {
-        serialized.substring(0, 5000) + "... (truncated)"
+private fun truncateIfNeeded(serialized: String, maxChars: Int): String {
+    return if (maxChars > 0 && serialized.length > maxChars) {
+        serialized.substring(0, maxChars) + "... (truncated)"
     } else {
         serialized
     }
@@ -312,7 +312,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.historyItemMaxChars) }
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
@@ -325,7 +325,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val compiledRegex = Pattern.compile(regex)
         api.proxy().history { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.historyItemMaxChars) }
     }
 
     mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
@@ -336,7 +336,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
         }
 
-        api.organizer().items().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+        api.organizer().items().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.historyItemMaxChars) }
     }
 
     mcpPaginatedTool<GetOrganizerItemsRegex>("Displays items matching a specified regex within the Organizer tab") {
@@ -349,7 +349,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val compiledRegex = Pattern.compile(regex)
         api.organizer().items { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.historyItemMaxChars) }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
@@ -361,7 +361,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         api.proxy().webSocketHistory().asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.historyItemMaxChars) }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistoryRegex>("Displays items matching a specified regex within the proxy WebSocket history") {
@@ -374,7 +374,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val compiledRegex = Pattern.compile(regex)
         api.proxy().webSocketHistory { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm()), config.historyItemMaxChars) }
     }
 
     mcpTool<SetTaskExecutionEngineState>("Sets the state of Burp's task execution engine (paused or unpaused)") {

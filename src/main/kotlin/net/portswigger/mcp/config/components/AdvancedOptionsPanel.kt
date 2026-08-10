@@ -13,6 +13,7 @@ import javax.swing.event.DocumentListener
 class AdvancedOptionsPanel(
     private val hostField: JTextField,
     private val portField: JTextField,
+    private val historyItemMaxCharsField: JTextField,
     private val reinstallNotice: WarningLabel
 ) : JPanel() {
 
@@ -43,7 +44,9 @@ class AdvancedOptionsPanel(
         add(createVerticalStrut(Design.Spacing.MD))
 
         val formPanel = createFormPanel(
-            "Server host:" to hostField, "Server port:" to portField
+            "Server host:" to hostField,
+            "Server port:" to portField,
+            "Max chars per history item (0 = unlimited):" to historyItemMaxCharsField
         )
         add(formPanel)
     }
