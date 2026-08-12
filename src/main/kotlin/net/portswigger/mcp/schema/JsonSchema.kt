@@ -2,10 +2,13 @@ package net.portswigger.mcp.schema
 
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlin.reflect.KClass
 import kotlin.reflect.full.memberProperties
+import kotlin.reflect.full.primaryConstructor
 
 fun getJsonSchemaForProperty(kType: kotlin.reflect.KType): JsonElement {
     return when (kType.classifier) {
@@ -47,11 +50,24 @@ fun getJsonSchemaForProperty(kType: kotlin.reflect.KType): JsonElement {
 fun KClass<*>.asInputSchema(): ToolSchema {
     val properties = mutableMapOf<String, JsonElement>()
     val required = mutableListOf<String>()
+    val parameters = primaryConstructor?.parameters?.associateBy { it.name }.orEmpty()
 
     for (prop in memberProperties) {
-        properties[prop.name] = getJsonSchemaForProperty(prop.returnType)
+        val schema = getJsonSchemaForProperty(prop.returnType).jsonObject.toMutableMap()
+        if (prop.returnType.isMarkedNullable) {
+            schema["type"] = JsonArray(listOf(schema.getValue("type"), JsonPrimitive("null")))
+        }
+        when (prop.name) {
+            "targetPort" -> {
+                schema["minimum"] = JsonPrimitive(1)
+                schema["maximum"] = JsonPrimitive(65535)
+            }
+            "count" -> schema["minimum"] = JsonPrimitive(1)
+            "offset", "length" -> schema["minimum"] = JsonPrimitive(0)
+        }
+        properties[prop.name] = JsonObject(schema)
 
-        if (!prop.returnType.isMarkedNullable) {
+        if (parameters[prop.name]?.isOptional == false) {
             required.add(prop.name)
         }
     }

@@ -8,11 +8,61 @@ import io.modelcontextprotocol.kotlin.sdk.types.ContentBlock
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.InternalSerializationApi
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.serializer
 import net.portswigger.mcp.schema.asInputSchema
 import kotlin.experimental.ExperimentalTypeInference
+import kotlin.reflect.KClass
+import kotlin.reflect.full.memberProperties
+
+@PublishedApi
+internal class McpToolException(message: String) : IllegalArgumentException(message)
+
+fun mcpError(message: String): Nothing = throw McpToolException(message)
+
+@PublishedApi
+internal val ToolJson = Json { ignoreUnknownKeys = true }
+
+@PublishedApi
+internal fun <I : Any> coerceWholeNumberArguments(arguments: JsonObject, inputClass: KClass<I>): JsonObject {
+    val integerProperties = inputClass.memberProperties
+        .filter { it.returnType.classifier == Int::class || it.returnType.classifier == Long::class }
+        .associate { it.name to it.returnType.classifier }
+
+    return JsonObject(arguments.mapValues { (name, value) ->
+        val primitive = value as? JsonPrimitive
+        val classifier = integerProperties[name]
+        if (primitive == null || primitive.isString || classifier == null) return@mapValues value
+
+        val integer = primitive.content.toBigDecimalOrNull()?.let {
+            try { it.toBigIntegerExact() } catch (_: ArithmeticException) { null }
+        } ?: return@mapValues value
+
+        when (classifier) {
+            Int::class -> integer.toIntExactOrNull()?.let(::JsonPrimitive) ?: value
+            Long::class -> integer.toLongExactOrNull()?.let(::JsonPrimitive) ?: value
+            else -> value
+        }
+    })
+}
+
+private fun java.math.BigInteger.toIntExactOrNull() = try { intValueExact() } catch (_: ArithmeticException) { null }
+private fun java.math.BigInteger.toLongExactOrNull() = try { longValueExact() } catch (_: ArithmeticException) { null }
+
+@PublishedApi
+internal fun toolErrorResult(toolName: String, error: Exception): CallToolResult {
+    val detail = error.message?.substringBefore(" at path:") ?: error::class.simpleName ?: "unknown error"
+    val message = when (error) {
+        is McpToolException -> detail
+        is SerializationException, is IllegalArgumentException ->
+            "Invalid arguments for '$toolName': $detail. Check the tool schema from tools/list and retry."
+        else -> "Tool '$toolName' failed: $detail. Check Burp's extension output for details."
+    }
+    return CallToolResult(content = listOf(TextContent(message)), isError = true)
+}
 
 @OptIn(InternalSerializationApi::class)
 inline fun <reified I : Any> Server.mcpTool(
@@ -27,18 +77,18 @@ inline fun <reified I : Any> Server.mcpTool(
         try {
             CallToolResult(
                 content = execute(
-                    Json.decodeFromJsonElement(
+                    ToolJson.decodeFromJsonElement(
                         serializer,
-                        request.params.arguments ?: JsonObject(emptyMap())
+                        coerceWholeNumberArguments(
+                            request.params.arguments ?: JsonObject(emptyMap()),
+                            I::class
+                        )
                     )
                 ),
                 isError = false
             )
         } catch (e: Exception) {
-            CallToolResult(
-                content = listOf(TextContent("Error: ${e.message}")),
-                isError = true
-            )
+            toolErrorResult(toolName, e)
         }
     }
 
@@ -83,7 +133,7 @@ inline fun <reified I : Paginated, J : Any> Server.mcpPaginatedTool(
             }
 
             else -> {
-                val upperLimit = (offset + count).coerceAtMost(items.size)
+                val upperLimit = (offset.toLong() + count).coerceAtMost(items.size.toLong()).toInt()
 
                 items.subList(offset, upperLimit)
                     .joinToString(separator = "\n\n", transform = mapper)
@@ -117,7 +167,11 @@ inline fun Server.mcpTool(
     crossinline execute: () -> List<ContentBlock>
 ) {
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
-        CallToolResult(content = execute(), isError = false)
+        try {
+            CallToolResult(content = execute(), isError = false)
+        } catch (e: Exception) {
+            toolErrorResult(name, e)
+        }
     }
     addTool(name = name, description = description, inputSchema = ToolSchema(), handler = handler)
 }
@@ -128,7 +182,11 @@ inline fun Server.mcpTool(
     crossinline execute: () -> String
 ) {
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
-        CallToolResult(content = listOf(TextContent(execute())), isError = false)
+        try {
+            CallToolResult(content = listOf(TextContent(execute())), isError = false)
+        } catch (e: Exception) {
+            toolErrorResult(name, e)
+        }
     }
     addTool(name = name, description = description, inputSchema = ToolSchema(), handler = handler)
 }

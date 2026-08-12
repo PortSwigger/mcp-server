@@ -28,6 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import net.portswigger.mcp.KtorServerManager
@@ -154,10 +155,115 @@ class ToolsKtTest {
 
     private fun findAvailablePort() = ServerSocket(0).use { it.localPort }
 
+    private fun requiredArgument(name: String): Any = when (name) {
+        "targetHostname" -> "example.com"
+        "targetPort" -> 443.0
+        "usesHttps" -> true
+        "pseudoHeaders" -> mapOf(
+            "method" to "GET", "scheme" to "https", "path" to "/", "authority" to "example.com"
+        )
+        "headers" -> emptyMap<String, String>()
+        "content" -> "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"
+        "requestBody", "text" -> ""
+        "json" -> "{}"
+        "regex" -> ".*"
+        "count", "length" -> 1.0
+        "offset" -> 0.0
+        "characterSet" -> "a"
+        "running", "intercepting" -> false
+        else -> "value"
+    }
+
     @AfterEach
     fun tearDown() {
         runBlocking { if (client.isConnected()) client.close() }
         serverManager.stop {}
+    }
+
+    @Test
+    fun `invalid constrained arguments return actionable MCP errors`() = runBlocking {
+        val validHttp2 = mapOf(
+            "pseudoHeaders" to mapOf(
+                "method" to "GET", "scheme" to "https", "path" to "/", "authority" to "example.com"
+            ),
+            "headers" to emptyMap<String, String>(),
+            "requestBody" to "",
+            "targetHostname" to "example.com",
+            "targetPort" to 443,
+            "usesHttps" to true
+        )
+        val cases = listOf(
+            Triple(
+                "send_http1_request",
+                mapOf("content" to "GET / HTTP/1.1\r\n\r\n", "targetHostname" to "example.com", "targetPort" to 0, "usesHttps" to false),
+                "targetPort must be between 1 and 65535"
+            ),
+            Triple("get_proxy_http_history", mapOf("count" to 0, "offset" to 0), "count must be greater than 0"),
+            Triple("get_proxy_http_history", mapOf("count" to 1, "offset" to -1), "offset must be 0 or greater"),
+            Triple("get_proxy_http_history_regex", mapOf("regex" to "[", "count" to 1, "offset" to 0), "regex is invalid at index"),
+            Triple(
+                "send_http2_request",
+                validHttp2 + ("pseudoHeaders" to mapOf("method" to "GET", "scheme" to "https", "authority" to "example.com")),
+                "pseudoHeaders must include :path"
+            ),
+            Triple(
+                "send_http2_request",
+                validHttp2 + ("pseudoHeaders" to mapOf("scheme" to "https", "path" to "/", "authority" to "example.com")),
+                "pseudoHeaders must include a non-blank :method"
+            ),
+            Triple(
+                "send_http2_request",
+                validHttp2 + ("pseudoHeaders" to mapOf("method" to "GET", "scheme" to "https", "path" to "/")),
+                "pseudoHeaders must include a non-blank :authority"
+            ),
+            Triple(
+                "send_http2_request",
+                validHttp2 + ("headers" to mapOf(":path" to "/")),
+                "pseudo-headers belong in pseudoHeaders"
+            )
+        )
+
+        cases.forEach { (tool, arguments, expected) ->
+            val result = client.callTool(tool, arguments)
+            assertTrue(result?.isError == true, "$tool should return an MCP error")
+            val message = result.expectTextContent()
+            assertTrue(message.startsWith("Invalid arguments for '$tool':"), message)
+            assertTrue(message.contains(expected), "$tool should explain: $expected")
+            assertTrue(message.endsWith("Check the tool schema from tools/list and retry."), message)
+        }
+    }
+
+    @Test
+    fun `schemas advertise runtime numeric and nullable constraints`() = runBlocking {
+        val tools = client.listTools().associateBy { it.name }
+        fun property(tool: String, name: String) = tools.getValue(tool).inputSchema.properties!!.getValue(name).jsonObject
+
+        listOf("send_http1_request", "send_http2_request", "create_repeater_tab", "create_repeater_tab_http2", "send_to_intruder")
+            .forEach { tool ->
+                assertEquals("1", property(tool, "targetPort").getValue("minimum").jsonPrimitive.content, tool)
+                assertEquals("65535", property(tool, "targetPort").getValue("maximum").jsonPrimitive.content, tool)
+            }
+        listOf(
+            "get_proxy_http_history", "get_proxy_http_history_regex", "get_organizer_items",
+            "get_organizer_items_regex", "get_proxy_websocket_history", "get_proxy_websocket_history_regex"
+        ).forEach { tool ->
+            assertEquals("1", property(tool, "count").getValue("minimum").jsonPrimitive.content, tool)
+            assertEquals("0", property(tool, "offset").getValue("minimum").jsonPrimitive.content, tool)
+        }
+        assertEquals("0", property("generate_random_string", "length").getValue("minimum").jsonPrimitive.content)
+
+        mapOf(
+            "create_repeater_tab" to "tabName",
+            "create_repeater_tab_http2" to "tabName",
+            "send_to_intruder" to "tabName"
+        ).forEach { (tool, name) ->
+            assertFalse(tools.getValue(tool).inputSchema.required.orEmpty().contains(name), tool)
+            assertEquals(
+                setOf("string", "null"),
+                property(tool, name).getValue("type").jsonArray.map { it.jsonPrimitive.content }.toSet(),
+                tool
+            )
+        }
     }
 
     @Nested
@@ -223,7 +329,8 @@ class ToolsKtTest {
                 )
 
                 delay(100)
-                result.expectTextContent("<no response>")
+                assertTrue(result?.isError == true)
+                assertTrue(result.expectTextContent().contains("No HTTP response was received"))
             }
         }
 
@@ -256,7 +363,7 @@ class ToolsKtTest {
                         "headers" to Json.encodeToJsonElement(headers),
                         "requestBody" to requestBody,
                         "targetHostname" to "example.com",
-                        "targetPort" to 443,
+                        "targetPort" to 443.0,
                         "usesHttps" to true
                     )
                 )
@@ -292,7 +399,9 @@ class ToolsKtTest {
             every { api.http() } returns httpService
             every { httpService.sendRequest(any(), HttpMode.HTTP_2) } returns null
 
-            val pseudoHeaders = mapOf("method" to "GET", "path" to "/test")
+            val pseudoHeaders = mapOf(
+                "method" to "GET", "scheme" to "https", "path" to "/test", "authority" to "example.com"
+            )
             val headers = mapOf("User-Agent" to "Test Agent")
 
             runBlocking {
@@ -308,7 +417,8 @@ class ToolsKtTest {
                 )
 
                 delay(100)
-                result.expectTextContent("<no response>")
+                assertTrue(result?.isError == true)
+                assertTrue(result.expectTextContent().contains("No HTTP response was received"))
             }
         }
         
@@ -351,11 +461,7 @@ class ToolsKtTest {
                 .filter { it.name().startsWith(":") }
                 .map { it.name() }
             
-            val expectedOrder = listOf(":scheme", ":method", ":path", ":authority")
-            for (i in 0 until minOf(expectedOrder.size, pseudoHeaderNames.size)) {
-                assertEquals(expectedOrder[i], pseudoHeaderNames[i],
-                    "Pseudo headers should follow the order: scheme, method, path, authority")
-            }
+            assertEquals(listOf(":scheme", ":method", ":path", ":authority"), pseudoHeaderNames)
         }
 
         @Test
@@ -397,6 +503,36 @@ class ToolsKtTest {
             val pseudoHeaderNames = headersSlot.captured.filter { it.name().startsWith(":") }.map { it.name() }
             assertEquals(listOf(":scheme", ":method", ":path", ":authority"), pseudoHeaderNames)
             assertTrue(headersSlot.captured.any { it.name() == "content-type" && it.value() == "application/json" })
+        }
+
+        @Test
+        fun `create repeater tab http2 accepts schema-required fields only`() = runBlocking {
+            val repeater = mockk<burp.api.montoya.repeater.Repeater>(relaxed = true)
+            val httpRequest = mockk<HttpRequest>()
+            every { HttpRequest.http2Request(any(), any(), any<String>()) } returns httpRequest
+            every { api.repeater() } returns repeater
+
+            val tool = client.listTools().single { it.name == "create_repeater_tab_http2" }
+            assertFalse(tool.inputSchema.required.orEmpty().contains("tabName"))
+
+            val result = client.callTool(
+                "create_repeater_tab_http2", mapOf(
+                    "pseudoHeaders" to mapOf(
+                        "method" to "GET",
+                        "scheme" to "https",
+                        "path" to "/",
+                        "authority" to "example.com"
+                    ),
+                    "headers" to emptyMap<String, String>(),
+                    "requestBody" to "",
+                    "targetHostname" to "example.com",
+                    "targetPort" to 443.0,
+                    "usesHttps" to true
+                )
+            )
+
+            assertFalse(result?.isError ?: true, result.expectTextContent())
+            verify(exactly = 1) { repeater.sendToRepeater(httpRequest, null) }
         }
     }
 
@@ -544,6 +680,7 @@ class ToolsKtTest {
             }
             
             verify(exactly = 1) { taskExecutionEngine.state = TaskExecutionEngine.TaskExecutionEngineState.RUNNING }
+            verify(exactly = 0) { taskExecutionEngine.state = TaskExecutionEngine.TaskExecutionEngineState.PAUSED }
             
             clearMocks(taskExecutionEngine, answers = false)
             
@@ -559,6 +696,7 @@ class ToolsKtTest {
             }
             
             verify(exactly = 1) { taskExecutionEngine.state = TaskExecutionEngine.TaskExecutionEngineState.PAUSED }
+            verify(exactly = 0) { taskExecutionEngine.state = TaskExecutionEngine.TaskExecutionEngineState.RUNNING }
         }
         
         @Test
@@ -581,6 +719,7 @@ class ToolsKtTest {
             }
             
             verify(exactly = 1) { proxy.enableIntercept() }
+            verify(exactly = 0) { proxy.disableIntercept() }
             
             clearMocks(proxy, answers = false)
             
@@ -596,6 +735,7 @@ class ToolsKtTest {
             }
             
             verify(exactly = 1) { proxy.disableIntercept() }
+            verify(exactly = 0) { proxy.enableIntercept() }
         }
         
         @Test
@@ -632,7 +772,8 @@ class ToolsKtTest {
                 )
                 
                 delay(100)
-                result.expectTextContent("User has disabled configuration editing. They can enable it in the MCP tab in Burp by selecting 'Enable tools that can edit your config'")
+                assertTrue(result?.isError == true)
+                assertTrue(result.expectTextContent().contains("disabled configuration editing"))
             }
             
             verify(exactly = 0) { burpSuite.importProjectOptionsFromJson(any()) }
@@ -651,7 +792,8 @@ class ToolsKtTest {
                 val result = client.callTool("get_active_editor_contents", emptyMap())
                 
                 delay(100)
-                result.expectTextContent("<No active editor>")
+                assertTrue(result?.isError == true)
+                assertTrue(result.expectTextContent().contains("No Burp message editor is active"))
             }
         }
         
@@ -685,7 +827,8 @@ class ToolsKtTest {
                 )
                 
                 delay(100)
-                result.expectTextContent("<No active editor>")
+                assertTrue(result?.isError == true)
+                assertTrue(result.expectTextContent().contains("No Burp message editor is active"))
             }
         }
         
@@ -705,7 +848,8 @@ class ToolsKtTest {
                 )
                 
                 delay(100)
-                result.expectTextContent("<Current editor is not editable>")
+                assertTrue(result?.isError == true)
+                assertTrue(result.expectTextContent().contains("read-only"))
             }
         }
         
@@ -1052,6 +1196,41 @@ class ToolsKtTest {
                 val result = client.callTool("get_collaborator_interactions", emptyMap())
                 delay(100)
                 result.expectTextContent("No interactions detected")
+            }
+        }
+
+        @Test
+        fun `every advertised schema accepts a call with only required fields`() = runBlocking {
+            val tools = client.listTools()
+            assertFalse(tools.isEmpty())
+
+            val byName = tools.associateBy { it.name }
+            val scannerProperties = byName.getValue("get_scanner_issues").inputSchema.properties!!
+            assertEquals("1", scannerProperties.getValue("count").jsonObject.getValue("minimum").jsonPrimitive.content)
+            assertEquals("0", scannerProperties.getValue("offset").jsonObject.getValue("minimum").jsonPrimitive.content)
+            mapOf(
+                "generate_collaborator_payload" to "customData",
+                "get_collaborator_interactions" to "payloadId"
+            ).forEach { (tool, name) ->
+                val schema = byName.getValue(tool).inputSchema
+                assertFalse(schema.required.orEmpty().contains(name), tool)
+                assertEquals(
+                    setOf("string", "null"),
+                    schema.properties!!.getValue(name).jsonObject.getValue("type").jsonArray
+                        .map { it.jsonPrimitive.content }.toSet(),
+                    tool
+                )
+            }
+
+            tools.forEach { tool ->
+                val arguments = tool.inputSchema.required.orEmpty().associateWith(::requiredArgument)
+                val result = client.callTool(tool.name, arguments)
+                val text = result.expectTextContent()
+
+                assertFalse(
+                    result?.isError == true && text.startsWith("Invalid arguments for"),
+                    "${tool.name} rejected arguments generated from its required schema: $text"
+                )
             }
         }
     }
