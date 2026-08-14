@@ -21,7 +21,7 @@ class SwingDataAccessApprovalHandler : DataAccessApprovalHandler {
         return suspendCoroutine { continuation ->
             SwingUtilities.invokeLater {
                 val accessTypeName = when (accessType) {
-                    DataAccessType.HTTP_HISTORY -> "HTTP history"
+                    DataAccessType.HTTP_HISTORY -> "HTTP messages"
                     DataAccessType.WEBSOCKET_HISTORY -> "WebSocket history"
                     DataAccessType.ORGANIZER -> "Organizer items"
                 }

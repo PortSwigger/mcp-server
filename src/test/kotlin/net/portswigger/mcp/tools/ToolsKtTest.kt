@@ -5,12 +5,19 @@ import burp.api.montoya.burpsuite.TaskExecutionEngine
 import burp.api.montoya.collaborator.*
 import burp.api.montoya.core.BurpSuiteEdition
 import burp.api.montoya.core.ByteArray
+import burp.api.montoya.core.ToolType as BurpToolType
 import burp.api.montoya.http.Http
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpProtocol
+import burp.api.montoya.http.handler.HttpHandler
+import burp.api.montoya.http.handler.HttpResponseReceived
+import burp.api.montoya.http.handler.ResponseReceivedAction
 import burp.api.montoya.http.message.HttpHeader
+import burp.api.montoya.http.message.MimeType
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.http.message.responses.HttpResponse
 import burp.api.montoya.logging.Logging
+import burp.api.montoya.organizer.OrganizerItem
 import burp.api.montoya.persistence.PersistedObject
 import burp.api.montoya.proxy.Proxy
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
@@ -131,6 +138,18 @@ class ToolsKtTest {
             }
         }
     }
+
+    private fun mockBytes(content: String): ByteArray {
+        val bytes = content.toByteArray()
+        return mockk<ByteArray>().also { result ->
+            every { result.length() } returns bytes.size
+            every { result.bytes } returns bytes
+            every { result.subArray(any(), any()) } answers {
+                mockBytes(bytes.copyOfRange(firstArg(), secondArg()).toString(Charsets.UTF_8))
+            }
+            every { result.toString() } returns content
+        }
+    }
     
     @BeforeEach
     fun setup() {
@@ -167,6 +186,7 @@ class ToolsKtTest {
         "requestBody", "text" -> ""
         "json" -> "{}"
         "regex" -> ".*"
+        "parts" -> listOf("response_headers")
         "count", "length" -> 1.0
         "offset" -> 0.0
         "characterSet" -> "a"
@@ -879,6 +899,355 @@ class ToolsKtTest {
     
     @Nested
     inner class PaginatedToolsTests {
+        @Test
+        fun `MCP sends become searchable snapshot artifacts without changing send output`() {
+            val http = mockk<Http>()
+            val exchange = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+            val request = mockk<HttpRequest>()
+            val response = mockk<HttpResponse>()
+            val snapshotRequest = mockk<HttpRequest>()
+            val snapshotResponse = mockk<HttpResponse>()
+            val service = mockk<burp.api.montoya.http.HttpService>()
+            val annotations = mockk<burp.api.montoya.core.Annotations>()
+
+            every { api.http() } returns http
+            every { HttpRequest.httpRequest(any(), any<String>()) } returns request
+            every { http.sendRequest(request) } returns exchange
+            every { exchange.toString() } returns "HTTP/1.1 202 Accepted\r\n\r\nqueued"
+            every { exchange.request() } returns request
+            every { exchange.response() } returns response
+            every { exchange.annotations() } returns annotations
+            every { annotations.notes() } returns ""
+            every { annotations.hasHighlightColor() } returns false
+            every { service.host() } returns "example.com"
+            every { service.port() } returns 443
+            every { service.secure() } returns true
+            every { request.method() } returns "POST"
+            every { request.url() } returns "https://example.com/sent"
+            every { request.path() } returns "/sent"
+            every { request.httpVersion() } returns "HTTP/1.1"
+            every { request.httpService() } returns service
+            every { request.toByteArray() } returns mockBytes("POST /sent HTTP/1.1\r\n\r\n")
+            every { request.copyToTempFile() } returns snapshotRequest
+            every { response.statusCode() } returns 202
+            every { response.mimeType() } returns MimeType.PLAIN_TEXT
+            every { response.toByteArray() } returns mockBytes("HTTP/1.1 202 Accepted\r\n\r\nqueued")
+            every { response.copyToTempFile() } returns snapshotResponse
+            every { snapshotResponse.body() } returns mockBytes("saved MCP response")
+
+            runBlocking {
+                val sent = client.callTool(
+                    "send_http1_request", mapOf(
+                        "content" to "POST /sent HTTP/1.1\r\n\r\n",
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true
+                    )
+                )
+                assertEquals("HTTP/1.1 202 Accepted\r\n\r\nqueued", sent.expectTextContent())
+
+                val item = Json.parseToJsonElement(
+                    client.callTool(
+                        "search_http_messages",
+                        mapOf("sources" to Json.encodeToJsonElement(listOf("mcp_send")))
+                    ).expectTextContent()
+                ).jsonObject.getValue("items").jsonArray.single().jsonObject
+
+                assertEquals("mcp_send", item.getValue("source").jsonPrimitive.content)
+                assertFalse(item.getValue("sourceLive").jsonPrimitive.content.toBoolean())
+                assertTrue(item.getValue("snapshotAvailable").jsonPrimitive.content.toBoolean())
+                assertEquals(202, item.getValue("status").jsonPrimitive.content.toInt())
+                val inspected = Json.parseToJsonElement(
+                    client.callTool(
+                        "inspect_http_message",
+                        mapOf(
+                            "handle" to item.getValue("handle").jsonPrimitive.content,
+                            "parts" to Json.encodeToJsonElement(listOf("response_body"))
+                        )
+                    ).expectTextContent()
+                ).jsonObject
+                assertEquals(
+                    "saved MCP response",
+                    inspected.getValue("parts").jsonArray.single().jsonObject.getValue("content").jsonPrimitive.content
+                )
+            }
+        }
+
+        @Test
+        fun `repeater results captured by the HTTP handler become snapshot artifacts`() {
+            val handler = slot<HttpHandler>()
+            val received = mockk<HttpResponseReceived>()
+            val nonRepeater = mockk<HttpResponseReceived>()
+            val request = mockk<HttpRequest>()
+            val snapshotRequest = mockk<HttpRequest>()
+            val snapshotResponse = mockk<HttpResponse>()
+            val service = mockk<burp.api.montoya.http.HttpService>()
+            val annotations = mockk<burp.api.montoya.core.Annotations>()
+            val action = mockk<ResponseReceivedAction>()
+
+            verify { api.http().registerHttpHandler(capture(handler)) }
+            mockkStatic(ResponseReceivedAction::class)
+            every { ResponseReceivedAction.continueWith(received) } returns action
+            every { ResponseReceivedAction.continueWith(nonRepeater) } returns action
+            every { nonRepeater.toolSource().isFromTool(BurpToolType.REPEATER) } returns false
+            every { received.toolSource().isFromTool(BurpToolType.REPEATER) } returns true
+            every { received.messageId() } returns 91
+            every { received.initiatingRequest() } returns request
+            every { received.annotations() } returns annotations
+            every { received.statusCode() } returns 201
+            every { received.mimeType() } returns MimeType.JSON
+            every { received.toByteArray() } returns mockBytes("HTTP/1.1 201 Created\r\n\r\n{}")
+            every { received.copyToTempFile() } returns snapshotResponse
+            every { annotations.notes() } returns "from repeater"
+            every { annotations.hasHighlightColor() } returns false
+            every { service.host() } returns "example.com"
+            every { service.port() } returns 443
+            every { service.secure() } returns true
+            every { request.method() } returns "POST"
+            every { request.url() } returns "https://example.com/repeated"
+            every { request.path() } returns "/repeated"
+            every { request.httpVersion() } returns "HTTP/1.1"
+            every { request.httpService() } returns service
+            every { request.toByteArray() } returns mockBytes("POST /repeated HTTP/1.1\r\n\r\n")
+            every { request.copyToTempFile() } returns snapshotRequest
+            every { snapshotResponse.body() } returns mockBytes("saved Repeater response")
+
+            assertSame(action, handler.captured.handleHttpResponseReceived(received))
+            assertSame(action, handler.captured.handleHttpResponseReceived(nonRepeater))
+
+            runBlocking {
+                val item = Json.parseToJsonElement(
+                    client.callTool(
+                        "search_http_messages",
+                        mapOf("sources" to Json.encodeToJsonElement(listOf("repeater")))
+                    ).expectTextContent()
+                ).jsonObject.getValue("items").jsonArray.single().jsonObject
+
+                assertEquals("repeater", item.getValue("source").jsonPrimitive.content)
+                assertFalse(item.getValue("sourceLive").jsonPrimitive.content.toBoolean())
+                assertTrue(item.getValue("snapshotAvailable").jsonPrimitive.content.toBoolean())
+                assertEquals(201, item.getValue("status").jsonPrimitive.content.toInt())
+                val inspected = Json.parseToJsonElement(
+                    client.callTool(
+                        "inspect_http_message",
+                        mapOf(
+                            "handle" to item.getValue("handle").jsonPrimitive.content,
+                            "parts" to Json.encodeToJsonElement(listOf("response_body"))
+                        )
+                    ).expectTextContent()
+                ).jsonObject
+                assertEquals(
+                    "saved Repeater response",
+                    inspected.getValue("parts").jsonArray.single().jsonObject.getValue("content").jsonPrimitive.content
+                )
+            }
+        }
+
+        @Test
+        fun `organizer and site map exchanges become artifacts and retain snapshots after a source disappears`() {
+            val organizerItem = mockk<OrganizerItem>()
+            val siteMapItem = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+            val organizerRequest = mockk<HttpRequest>()
+            val siteMapRequest = mockk<HttpRequest>()
+            val organizerSnapshot = mockk<HttpRequest>()
+            val siteMapSnapshot = mockk<HttpRequest>()
+            val response = mockk<HttpResponse>()
+            val responseSnapshot = mockk<HttpResponse>()
+            val service = mockk<burp.api.montoya.http.HttpService>()
+            val annotations = mockk<burp.api.montoya.core.Annotations>()
+            val siteMapItems = mutableListOf(siteMapItem)
+
+            every { api.organizer().items() } returns listOf(organizerItem)
+            every { api.siteMap().requestResponses() } answers { siteMapItems.toList() }
+            every { organizerItem.id() } returns 7
+            every { organizerItem.request() } returns organizerRequest
+            every { organizerItem.response() } returns response
+            every { organizerItem.annotations() } returns annotations
+            every { siteMapItem.request() } returns siteMapRequest
+            every { siteMapItem.response() } returns response
+            every { siteMapItem.annotations() } returns annotations
+            every { annotations.notes() } returns ""
+            every { annotations.hasHighlightColor() } returns false
+            every { service.host() } returns "example.com"
+            every { service.port() } returns 443
+            every { service.secure() } returns true
+            listOf(
+                Triple(organizerRequest, organizerSnapshot, "/organized"),
+                Triple(siteMapRequest, siteMapSnapshot, "/mapped")
+            ).forEach { (request, snapshot, path) ->
+                every { request.method() } returns "GET"
+                every { request.url() } returns "https://example.com$path"
+                every { request.path() } returns path
+                every { request.httpVersion() } returns "HTTP/1.1"
+                every { request.httpService() } returns service
+                every { request.toByteArray() } returns mockBytes("GET $path HTTP/1.1\r\n\r\n")
+                every { request.copyToTempFile() } returns snapshot
+            }
+            every { siteMapSnapshot.body() } returns mockBytes("saved site-map request")
+            every { response.statusCode() } returns 200
+            every { response.mimeType() } returns MimeType.JSON
+            every { response.toByteArray() } returns mockBytes("HTTP/1.1 200 OK\r\n\r\n{}")
+            every { response.copyToTempFile() } returns responseSnapshot
+
+            runBlocking {
+                val first = Json.parseToJsonElement(
+                    client.callTool(
+                        "search_http_messages",
+                        mapOf("sources" to Json.encodeToJsonElement(listOf("organizer", "site_map")))
+                    ).expectTextContent()
+                ).jsonObject.getValue("items").jsonArray.map { it.jsonObject }
+
+                assertEquals(setOf("organizer", "site_map"), first.map { it.getValue("source").jsonPrimitive.content }.toSet())
+                val siteMapArtifact = first.single { it.getValue("source").jsonPrimitive.content == "site_map" }
+                val handle = siteMapArtifact.getValue("handle").jsonPrimitive.content
+                assertTrue(siteMapArtifact.getValue("sourceLive").jsonPrimitive.content.toBoolean())
+
+                siteMapItems.clear()
+                val second = Json.parseToJsonElement(
+                    client.callTool(
+                        "search_http_messages",
+                        mapOf("sources" to Json.encodeToJsonElement(listOf("site_map")))
+                    ).expectTextContent()
+                ).jsonObject.getValue("items").jsonArray.single().jsonObject
+
+                assertEquals(handle, second.getValue("handle").jsonPrimitive.content)
+                assertFalse(second.getValue("sourceLive").jsonPrimitive.content.toBoolean())
+                assertTrue(second.getValue("snapshotAvailable").jsonPrimitive.content.toBoolean())
+                val inspected = Json.parseToJsonElement(
+                    client.callTool(
+                        "inspect_http_message",
+                        mapOf(
+                            "handle" to handle,
+                            "parts" to Json.encodeToJsonElement(listOf("request_body"))
+                        )
+                    ).expectTextContent()
+                ).jsonObject
+                assertEquals(
+                    "saved site-map request",
+                    inspected.getValue("parts").jsonArray.single().jsonObject.getValue("content").jsonPrimitive.content
+                )
+            }
+        }
+
+        @Test
+        fun `search metadata handle can inspect a response body window without returning the large request`() {
+            val proxy = mockk<Proxy>()
+            val historyItem = mockk<ProxyHttpRequestResponse>()
+            val request = mockk<HttpRequest>()
+            val response = mockk<HttpResponse>()
+            val service = mockk<burp.api.montoya.http.HttpService>()
+            val requestBytes = mockBytes("GET /large HTTP/1.1\r\nHost: example.com\r\n\r\n${"SECRET_REQUEST_BODY".repeat(1_000)}")
+            val responseBytes = mockBytes("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n0123456789")
+            val responseBody = mockBytes("0123456789")
+            val contentType = mockk<HttpHeader> {
+                every { name() } returns "Content-Type"
+                every { value() } returns "text/plain"
+            }
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns listOf(historyItem)
+            every { historyItem.finalRequest() } returns request
+            every { historyItem.request() } returns request
+            every { historyItem.response() } returns response
+            every { historyItem.httpService() } returns service
+            every { historyItem.id() } returns 42
+            every { historyItem.time() } returns ZonedDateTime.parse("2026-08-13T10:15:30Z")
+            every { historyItem.mimeType() } returns MimeType.PLAIN_TEXT
+            every { historyItem.annotations().notes() } returns "selected"
+            every { historyItem.annotations().hasHighlightColor() } returns false
+            every { service.host() } returns "example.com"
+            every { service.port() } returns 443
+            every { service.secure() } returns true
+            every { request.method() } returns "GET"
+            every { request.url() } returns "https://example.com/large"
+            every { request.httpService() } returns service
+            every { request.path() } returns "/large"
+            every { request.httpVersion() } returns "HTTP/1.1"
+            every { request.headers() } returns listOf(mockk(relaxed = true))
+            every { request.toByteArray() } returns requestBytes
+            every { request.copyToTempFile() } returns request
+            every { response.statusCode() } returns 200
+            every { response.reasonPhrase() } returns "OK"
+            every { response.httpVersion() } returns "HTTP/1.1"
+            every { response.headers() } returns listOf(contentType)
+            every { response.toByteArray() } returns responseBytes
+            every { response.body() } returns responseBody
+            every { response.copyToTempFile() } returns response
+
+            runBlocking {
+                val searchResult = client.callTool(
+                    "search_http_messages", mapOf(
+                        "sources" to Json.encodeToJsonElement(listOf("proxy")),
+                        "host" to "example.com",
+                        "count" to 1
+                    )
+                )
+                val searchText = searchResult.expectTextContent()
+                assertEquals(false, searchResult?.isError, searchText)
+                val search = Json.parseToJsonElement(searchText).jsonObject
+                val item = search.getValue("items").jsonArray.single().jsonObject
+
+                assertEquals(false, searchResult?.isError)
+                assertEquals(search, searchResult?.structuredContent)
+                assertTrue(item.getValue("handle").jsonPrimitive.content.matches(Regex("http_[0-9a-f]{32}")))
+                assertEquals("proxy", item.getValue("source").jsonPrimitive.content)
+                assertEquals("42", item.getValue("sourceId").jsonPrimitive.content)
+                assertEquals("965838a1411422358d8a0986ea6cd3738f5171c42736b46f76996eb93ac70609", item.getValue("requestFingerprint").jsonPrimitive.content)
+                assertEquals("96bd0939ca1f369c143517a01136355453fc10219bfa6cbe38c0f6d33ac88fd8", item.getValue("responseFingerprint").jsonPrimitive.content)
+                assertTrue(item.getValue("sourceLive").jsonPrimitive.content.toBoolean())
+                assertTrue(item.getValue("snapshotAvailable").jsonPrimitive.content.toBoolean())
+                assertEquals("GET", item.getValue("method").jsonPrimitive.content)
+                assertEquals(requestBytes.length(), item.getValue("requestSize").jsonPrimitive.content.toInt())
+                assertFalse(searchText.contains("SECRET_REQUEST_BODY"))
+                assertFalse(searchText.contains("0123456789"))
+
+                val repeated = client.callTool(
+                    "search_http_messages", mapOf("sources" to Json.encodeToJsonElement(listOf("proxy")), "count" to 1)
+                ).expectTextContent()
+                assertEquals(
+                    item.getValue("handle").jsonPrimitive.content,
+                    Json.parseToJsonElement(repeated).jsonObject.getValue("items").jsonArray.single().jsonObject
+                        .getValue("handle").jsonPrimitive.content
+                )
+
+                val inspectResult = client.callTool(
+                    "inspect_http_message", mapOf(
+                        "handle" to item.getValue("handle").jsonPrimitive.content,
+                        "parts" to Json.encodeToJsonElement(listOf("response_headers", "response_body")),
+                        "bodyOffset" to 3,
+                        "bodyLength" to 4
+                    )
+                )
+                val inspected = Json.parseToJsonElement(inspectResult.expectTextContent()).jsonObject
+                val parts = inspected.getValue("parts").jsonArray.map { it.jsonObject }
+                assertEquals(
+                    listOf("response_headers", "response_body"),
+                    parts.map { it.getValue("name").jsonPrimitive.content }
+                )
+                val headers = parts.single { it.getValue("name").jsonPrimitive.content == "response_headers" }
+                val body = parts.single { it.getValue("name").jsonPrimitive.content == "response_body" }
+
+                assertEquals(false, inspectResult?.isError)
+                assertTrue(headers.getValue("content").jsonPrimitive.content.contains("Content-Type: text/plain"))
+                assertEquals("3456", body.getValue("content").jsonPrimitive.content)
+                assertEquals(10, body.getValue("originalSize").jsonPrimitive.content.toInt())
+                assertEquals(3, body.getValue("rangeStart").jsonPrimitive.content.toInt())
+                assertEquals(7, body.getValue("rangeEndExclusive").jsonPrimitive.content.toInt())
+                assertTrue(body.getValue("hasMore").jsonPrimitive.content.toBoolean())
+                assertTrue(body.getValue("truncated").jsonPrimitive.content.toBoolean())
+                assertFalse(body.getValue("redacted").jsonPrimitive.content.toBoolean())
+
+                val unknown = client.callTool(
+                    "inspect_http_message", mapOf(
+                        "handle" to "unknown",
+                        "parts" to Json.encodeToJsonElement(listOf("response_headers"))
+                    )
+                )
+                assertEquals(true, unknown?.isError)
+                assertTrue(unknown.expectTextContent().contains("run search_http_messages again"))
+            }
+        }
+
         @Test
         fun `get proxy history should paginate properly`() {
             val proxy = mockk<Proxy>()

@@ -67,7 +67,7 @@ class ServerConfigurationPanel(
         add(createVerticalStrut(Design.Spacing.SM))
 
         alwaysAllowHttpHistoryCheckBox = createIndentedCheckBox(
-            "Always allow HTTP history access", config.alwaysAllowHttpHistory, config.requireDataAccessApproval
+            "Always allow HTTP message access", config.alwaysAllowHttpHistory, config.requireDataAccessApproval
         ) { config.alwaysAllowHttpHistory = it }
         add(alwaysAllowHttpHistoryCheckBox)
         add(createVerticalStrut(Design.Spacing.SM))

@@ -12,6 +12,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.serializer
 import net.portswigger.mcp.schema.asInputSchema
 import kotlin.experimental.ExperimentalTypeInference
@@ -93,6 +94,41 @@ inline fun <reified I : Any> Server.mcpTool(
     }
 
     addTool(name = toolName, description = description, inputSchema = inputSchema, handler = handler)
+}
+
+@OptIn(InternalSerializationApi::class)
+inline fun <reified I : Any, reified O : Any> Server.mcpStructuredTool(
+    description: String,
+    crossinline execute: I.() -> O
+) {
+    val toolName = I::class.simpleName?.toLowerSnakeCase() ?: error("Couldn't find name for ${I::class}")
+    val inputSerializer = I::class.serializer()
+    val outputSerializer = O::class.serializer()
+    val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, request ->
+        try {
+            val input = ToolJson.decodeFromJsonElement(
+                inputSerializer,
+                coerceWholeNumberArguments(request.params.arguments ?: JsonObject(emptyMap()), I::class)
+            )
+            val output = execute(input)
+            val structured = ToolJson.encodeToJsonElement(outputSerializer, output).jsonObject
+            CallToolResult(
+                content = listOf(TextContent(ToolJson.encodeToString(outputSerializer, output))),
+                structuredContent = structured,
+                isError = false
+            )
+        } catch (e: Exception) {
+            toolErrorResult(toolName, e)
+        }
+    }
+
+    addTool(
+        name = toolName,
+        description = description,
+        inputSchema = I::class.asInputSchema(),
+        outputSchema = O::class.asInputSchema(),
+        handler = handler
+    )
 }
 
 @OptIn(ExperimentalTypeInference::class)

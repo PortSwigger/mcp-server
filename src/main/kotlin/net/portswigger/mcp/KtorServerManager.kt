@@ -14,6 +14,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.server.mcp
 import net.portswigger.mcp.config.McpConfig
+import net.portswigger.mcp.tools.HttpArtifactRegistry
 import net.portswigger.mcp.tools.registerTools
 import java.net.URI
 import java.util.concurrent.ExecutorService
@@ -24,6 +25,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
 
     private var server: EmbeddedServer<*, *>? = null
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val httpArtifacts = HttpArtifactRegistry(api).also { it.start() }
 
     override fun start(config: McpConfig, callback: (ServerState) -> Unit) {
         callback(ServerState.Starting)
@@ -96,7 +98,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                         mcpServer
                     }
 
-                    mcpServer.registerTools(api, config)
+                    mcpServer.registerTools(api, config, httpArtifacts)
                 }.apply {
                     start(wait = false)
                 }
@@ -130,6 +132,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
     override fun shutdown() {
         server?.stop(1000, 5000)
         server = null
+        httpArtifacts.close()
 
         executor.shutdown()
         executor.awaitTermination(10, TimeUnit.SECONDS)

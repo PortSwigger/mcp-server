@@ -109,7 +109,9 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\r", "")          // Actual CR → remove
     .replace("\n", "\r\n")      // All LF → proper CRLF
 
-fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
+internal fun Server.registerTools(api: MontoyaApi, config: McpConfig, httpArtifacts: HttpArtifactRegistry) {
+
+    registerHttpMessageTools(api, config, httpArtifacts)
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {
@@ -126,6 +128,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
         val response = api.http().sendRequest(request)
+
+        response?.let(httpArtifacts::captureMcpSend)
 
         response?.toString() ?: mcpError("No HTTP response was received from $targetHostname:$targetPort. Check the target and Burp network settings.")
     }
@@ -159,6 +163,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody)
         val response = api.http().sendRequest(request, HttpMode.HTTP_2)
+
+        response?.let(httpArtifacts::captureMcpSend)
 
         response?.toString() ?: mcpError("No HTTP response was received from $targetHostname:$targetPort. Check the target and Burp network settings.")
     }
