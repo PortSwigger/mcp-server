@@ -446,7 +446,7 @@ data class SendHttp2Request(
 
 @Serializable
 data class CreateRepeaterTab(
-    val tabName: String?,
+    val tabName: String,
     val content: String,
     override val targetHostname: String,
     override val targetPort: Int,
@@ -455,7 +455,7 @@ data class CreateRepeaterTab(
 
 @Serializable
 data class CreateRepeaterTabHttp2(
-    val tabName: String?,
+    val tabName: String,
     val pseudoHeaders: Map<String, String>,
     val headers: Map<String, String>,
     val requestBody: String,
@@ -466,7 +466,7 @@ data class CreateRepeaterTabHttp2(
 
 @Serializable
 data class SendToIntruder(
-    val tabName: String?,
+    val tabName: String,
     val content: String,
     override val targetHostname: String,
     override val targetPort: Int,
