@@ -9,7 +9,23 @@ import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.scanner.AuditConfiguration
+import burp.api.montoya.scanner.BuiltInAuditConfiguration
+import burp.api.montoya.scanner.CrawlConfiguration
+import burp.api.montoya.scanner.ReportFormat
+import burp.api.montoya.scanner.ScanTask
+import burp.api.montoya.utilities.CompressionType
+import burp.api.montoya.proxy.http.ProxyRequestHandler
+import burp.api.montoya.proxy.http.ProxyRequestReceivedAction
+import burp.api.montoya.proxy.http.ProxyRequestToBeSentAction
+import burp.api.montoya.proxy.http.InterceptedRequest
+import burp.api.montoya.http.handler.HttpHandler
+import burp.api.montoya.http.handler.HttpRequestToBeSent
+import burp.api.montoya.http.handler.HttpResponseReceived
+import burp.api.montoya.http.handler.RequestToBeSentAction
+import burp.api.montoya.http.handler.ResponseReceivedAction
 import io.modelcontextprotocol.kotlin.sdk.server.Server
+import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -110,6 +126,42 @@ private fun normalizePrelude(prelude: String): String = prelude
 
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
+    // --- Live traffic modifiers: proxy match-and-replace + global header injection.
+    // Rules are managed by the tools below; empty registries are a no-op.
+    api.proxy().registerRequestHandler(object : ProxyRequestHandler {
+        override fun handleRequestReceived(r: InterceptedRequest): ProxyRequestReceivedAction =
+            ProxyRequestReceivedAction.continueWith(r)
+
+        override fun handleRequestToBeSent(r: InterceptedRequest): ProxyRequestToBeSentAction {
+            val rules = MatchReplaceRules.all()
+            val headers = InjectedHeaders.all()
+            if (rules.isEmpty() && headers.isEmpty()) return ProxyRequestToBeSentAction.continueWith(r)
+            var request: HttpRequest = r
+            if (rules.isNotEmpty()) {
+                var text = r.toString()
+                for ((match, replace) in rules) {
+                    text = try { Regex(match).replace(text, replace) } catch (e: Exception) { text }
+                }
+                request = HttpRequest.httpRequest(r.httpService(), text)
+            }
+            for ((name, value) in headers) request = request.withUpdatedHeader(name, value)
+            return ProxyRequestToBeSentAction.continueWith(request)
+        }
+    })
+
+    api.http().registerHttpHandler(object : HttpHandler {
+        override fun handleHttpRequestToBeSent(r: HttpRequestToBeSent): RequestToBeSentAction {
+            val headers = InjectedHeaders.all()
+            if (headers.isEmpty()) return RequestToBeSentAction.continueWith(r)
+            var req: HttpRequest = r
+            for ((name, value) in headers) req = req.withUpdatedHeader(name, value)
+            return RequestToBeSentAction.continueWith(req)
+        }
+
+        override fun handleHttpResponseReceived(r: HttpResponseReceived): ResponseReceivedAction =
+            ResponseReceivedAction.continueWith(r)
+    })
+
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {
             HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
@@ -123,7 +175,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         val fixedContent = normalizeHttpContent(content)
 
-        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
+        var request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
+        for ((name, value) in InjectedHeaders.all()) request = request.withUpdatedHeader(name, value)
         val response = api.http().sendRequest(request)
 
         response?.toString() ?: "<no response>"
@@ -401,6 +454,261 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         "Editor text has been set"
     }
+
+    mcpTool<StartActiveScan>(
+        "Starts a Burp active scan (audit) of the given URL using the built-in active audit checks. " +
+                "Returns immediately; poll findings later with get_scanner_issues."
+    ) {
+        val request = HttpRequest.httpRequestFromUrl(url)
+        val service = request.httpService()
+
+        val allowed = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(
+                service.host(), service.port(), config, request.toString(), api
+            )
+        }
+        if (!allowed) {
+            api.logging().logToOutput("MCP active scan denied: $url")
+            return@mcpTool "Active scan of $url denied by Burp Suite"
+        }
+
+        api.logging().logToOutput("MCP active scan starting: $url")
+        val audit = api.scanner().startAudit(
+            AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS)
+        )
+        audit.addRequest(request)
+        val id = ScanRegistry.add("active-audit", url, audit)
+
+        "Started active scan #$id of $url. Poll with scan_status; read findings with get_scanner_issues."
+    }
+
+    mcpTool<StartPassiveScan>(
+        "Fetches a URL and runs Burp's passive audit checks on the response (no attack traffic sent to the target). " +
+                "Read findings with get_scanner_issues."
+    ) {
+        val request = HttpRequest.httpRequestFromUrl(url)
+        val service = request.httpService()
+        val allowed = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(
+                service.host(), service.port(), config, request.toString(), api
+            )
+        }
+        if (!allowed) return@mcpTool "Passive scan of $url denied by Burp Suite"
+
+        val audit = api.scanner().startAudit(
+            AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_PASSIVE_AUDIT_CHECKS)
+        )
+        audit.addRequest(request)
+        val id = ScanRegistry.add("passive-audit", url, audit)
+        "Started passive scan #$id of $url."
+    }
+
+    mcpTool(
+        "scan_status",
+        "Reports live status (running/finished, request and error counts) of every scan/crawl task started this session."
+    ) {
+        val tasks = ScanRegistry.all()
+        if (tasks.isEmpty()) "No scan or crawl tasks have been started this session."
+        else tasks.joinToString("\n") { entry ->
+            // Some ScanTask methods may be unimplemented in the running Burp build; guard each.
+            val status = runCatching { entry.task.statusMessage() }.getOrElse { "n/a" }
+            val reqs = runCatching { entry.task.requestCount() }.getOrNull()
+            val errs = runCatching { entry.task.errorCount() }.getOrNull()
+            buildString {
+                append("#${entry.id} [${entry.kind}] ${entry.target} -> ").append(status)
+                if (reqs != null) append(" | requests=").append(reqs)
+                if (errs != null) append(" | errors=").append(errs)
+            }
+        }
+    }
+
+    mcpTool<ExportScanReport>(
+        "Exports all current scanner issues to an HTML or XML report file at the given absolute path. format: HTML or XML."
+    ) {
+        val fmt = if (format.equals("XML", ignoreCase = true)) ReportFormat.XML else ReportFormat.HTML
+        val issues = api.siteMap().issues()
+        if (issues.isEmpty()) return@mcpTool "No scanner issues to export."
+        api.scanner().generateReport(issues, fmt, Path.of(path))
+        "Exported ${issues.size} issue(s) as ${fmt.name} to $path"
+    }
+
+    mcpTool<StartCrawl>(
+        "Starts a Burp crawl (spider) from one or more seed URLs (comma-separated). Burp discovers " +
+                "linked content and adds it to the site map. Combine with start_active_scan to audit what is found."
+    ) {
+        val seeds = url.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        if (seeds.isEmpty()) return@mcpTool "No seed URLs provided"
+
+        for (seed in seeds) {
+            val request = HttpRequest.httpRequestFromUrl(seed)
+            val service = request.httpService()
+            val allowed = runBlocking {
+                HttpRequestSecurity.checkHttpRequestPermission(
+                    service.host(), service.port(), config, request.toString(), api
+                )
+            }
+            if (!allowed) {
+                api.logging().logToOutput("MCP crawl denied: $seed")
+                return@mcpTool "Crawl of $seed denied by Burp Suite"
+            }
+        }
+
+        api.logging().logToOutput("MCP crawl starting: $seeds")
+        val crawl = api.scanner().startCrawl(CrawlConfiguration.crawlConfiguration(*seeds.toTypedArray()))
+        val id = ScanRegistry.add("crawl", seeds.joinToString(","), crawl)
+
+        "Started crawl #$id from ${seeds.size} seed(s): ${seeds.joinToString(", ")}. " +
+                "Discovered content appears in the site map (get_site_map); poll scan_status; then start_active_scan."
+    }
+
+    // ---------------- Site map ----------------
+    mcpPaginatedTool<GetSiteMap, String>(
+        "Lists site map entries (method, URL, status), optionally filtered to a URL prefix. Paginated via count/offset."
+    ) {
+        val entries = if (prefix.isNullOrBlank()) api.siteMap().requestResponses()
+        else api.siteMap().requestResponses(burp.api.montoya.sitemap.SiteMapFilter.prefixFilter(prefix))
+        entries.map { rr ->
+            val status = rr.response()?.statusCode()?.toString() ?: "-"
+            "${rr.request().method()} ${rr.request().url()} -> $status"
+        }
+    }
+
+    mcpTool<AddToSiteMap>("Fetches a URL and adds the request/response to Burp's site map.") {
+        val request = HttpRequest.httpRequestFromUrl(url)
+        val service = request.httpService()
+        val allowed = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(
+                service.host(), service.port(), config, request.toString(), api
+            )
+        }
+        if (!allowed) return@mcpTool "Adding $url denied by Burp Suite"
+        val rr = api.http().sendRequest(request)
+        api.siteMap().add(rr)
+        "Added to site map: $url (${rr.response()?.statusCode() ?: "-"})"
+    }
+
+    // ---------------- Scope ----------------
+    mcpTool<ScopeAdd>("Adds a URL prefix to Burp's target scope.") {
+        api.scope().includeInScope(url)
+        "Added to scope: $url"
+    }
+    mcpTool<ScopeRemove>("Removes a URL from Burp's target scope.") {
+        api.scope().excludeFromScope(url)
+        "Removed from scope: $url"
+    }
+    mcpTool<ScopeCheck>("Checks whether a URL is in Burp's target scope.") {
+        "In scope: ${api.scope().isInScope(url)}"
+    }
+
+    // ---------------- Intruder replacement: real sniper fuzzing with results ----------------
+    mcpTool<RunIntruderAttack>(
+        "Runs an automated sniper-style attack: replaces the marker (default FUZZ) in the request content with each " +
+                "payload, sends every request through Burp, and returns status code, response length and time per payload. " +
+                "This is the automatable equivalent of Intruder (Montoya cannot run the Intruder UI attack itself)."
+    ) {
+        val mark = if (marker.isNullOrEmpty()) "FUZZ" else marker
+        val list = payloads.take(1000)
+        if (list.isEmpty()) return@mcpTool "No payloads provided."
+
+        val allowed = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
+        }
+        if (!allowed) return@mcpTool "Attack against $targetHostname:$targetPort denied by Burp Suite"
+
+        val header = "payload | status | length | ms"
+        val rows = list.map { payload ->
+            val body = normalizeHttpContent(content.replace(mark, payload))
+            val request = HttpRequest.httpRequest(toMontoyaService(), body)
+            val start = System.currentTimeMillis()
+            val resp = api.http().sendRequest(request)
+            val ms = System.currentTimeMillis() - start
+            val code = resp?.response()?.statusCode()?.toString() ?: "-"
+            val len = resp?.response()?.toByteArray()?.length()?.toString() ?: "-"
+            val shown = if (payload.length > 40) payload.take(40) + "…" else payload
+            "$shown | $code | $len | $ms"
+        }
+        (listOf("Sniper attack: ${list.size} requests to $targetHostname:$targetPort", header) + rows)
+            .joinToString("\n")
+    }
+
+    // ---------------- Decoder extras ----------------
+    mcpTool<HexEncode>("Hex-encodes the input string (UTF-8 bytes).") {
+        content.toByteArray(Charsets.UTF_8).joinToString("") { "%02x".format(it) }
+    }
+    mcpTool<HexDecode>("Hex-decodes the input string to text (UTF-8).") {
+        val clean = content.trim().replace(" ", "").replace("\n", "")
+        String(ByteArray(clean.length / 2) { i -> clean.substring(i * 2, i * 2 + 2).toInt(16).toByte() },
+            Charsets.UTF_8)
+    }
+    mcpTool<HtmlEncode>("HTML-entity-encodes the input string.") {
+        api.utilities().htmlUtils().encode(content)
+    }
+    mcpTool<HtmlDecode>("HTML-entity-decodes the input string.") {
+        api.utilities().htmlUtils().decode(content)
+    }
+    mcpTool<GzipCompress>("Gzip-compresses the input text and returns the result base64-encoded.") {
+        val compressed = api.utilities().compressionUtils()
+            .compress(burp.api.montoya.core.ByteArray.byteArray(content), CompressionType.GZIP)
+        api.utilities().base64Utils().encodeToString(compressed)
+    }
+    mcpTool<GzipDecompress>("Gzip-decompresses base64-encoded gzip data and returns the resulting text.") {
+        val raw = api.utilities().base64Utils().decode(content)
+        val out = api.utilities().compressionUtils().decompress(raw, CompressionType.GZIP)
+        out.toString()
+    }
+
+    // ---------------- Custom scan checks (BCheck) ----------------
+    mcpTool<ImportBcheck>(
+        "Imports a BCheck script into Burp's scanner. Once imported it runs as a custom scan check on subsequent " +
+                "audits. Returns the import status and any parse errors."
+    ) {
+        val result = api.scanner().bChecks().importBCheck(script)
+        val errors = result.importErrors()
+        buildString {
+            append("BCheck import status: ").append(result.status())
+            if (errors.isNotEmpty()) append("\nErrors:\n").append(errors.joinToString("\n") { "  - $it" })
+            else append("\nImported successfully; it will run on future scans.")
+        }
+    }
+
+    // ---------------- Proxy match-and-replace ----------------
+    mcpTool<AddMatchReplaceRule>(
+        "Adds a regex match-and-replace rule applied to requests as they leave the Proxy (browser traffic). " +
+                "match is a Java regex over the full request text; replace is the replacement (supports \$1 groups)."
+    ) {
+        MatchReplaceRules.add(match, replace)
+        "Added match-and-replace rule #${MatchReplaceRules.all().size}: /$match/ -> \"$replace\". " +
+                "Applies to proxied requests."
+    }
+    mcpTool("list_match_replace_rules", "Lists the active proxy match-and-replace rules.") {
+        val rules = MatchReplaceRules.all()
+        if (rules.isEmpty()) "No match-and-replace rules configured."
+        else rules.mapIndexed { i, (m, r) -> "#${i + 1}: /$m/ -> \"$r\"" }.joinToString("\n")
+    }
+    mcpTool("clear_match_replace_rules", "Removes all proxy match-and-replace rules.") {
+        val n = MatchReplaceRules.all().size
+        MatchReplaceRules.clear()
+        "Cleared $n match-and-replace rule(s)."
+    }
+
+    // ---------------- Global request-header injection (session-handling style) ----------------
+    mcpTool<AddRequestHeader>(
+        "Injects (or overwrites) a header on every HTTP request Burp sends, across all tools. Useful for adding an " +
+                "Authorization or session header to authenticate all traffic."
+    ) {
+        InjectedHeaders.add(name, value)
+        "Now injecting header on all requests: $name: $value (${InjectedHeaders.all().size} header(s) active)."
+    }
+    mcpTool("list_request_headers", "Lists the headers currently injected into all outgoing requests.") {
+        val headers = InjectedHeaders.all()
+        if (headers.isEmpty()) "No injected headers."
+        else headers.joinToString("\n") { (n, v) -> "$n: $v" }
+    }
+    mcpTool("clear_request_headers", "Stops injecting all previously added request headers.") {
+        val n = InjectedHeaders.all().size
+        InjectedHeaders.clear()
+        "Cleared $n injected header(s)."
+    }
 }
 
 fun getActiveEditor(api: MontoyaApi): JTextArea? {
@@ -472,6 +780,107 @@ data class SendToIntruder(
     override val targetPort: Int,
     override val usesHttps: Boolean
 ) : HttpServiceParams
+
+@Serializable
+data class StartActiveScan(val url: String)
+
+@Serializable
+data class StartCrawl(val url: String)
+
+@Serializable
+data class StartPassiveScan(val url: String)
+
+@Serializable
+data class ExportScanReport(val path: String, val format: String)
+
+@Serializable
+data class GetSiteMap(val prefix: String? = null, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class AddToSiteMap(val url: String)
+
+@Serializable
+data class ScopeAdd(val url: String)
+
+@Serializable
+data class ScopeRemove(val url: String)
+
+@Serializable
+data class ScopeCheck(val url: String)
+
+@Serializable
+data class RunIntruderAttack(
+    val content: String,
+    val marker: String? = null,
+    val payloads: List<String>,
+    override val targetHostname: String,
+    override val targetPort: Int,
+    override val usesHttps: Boolean
+) : HttpServiceParams
+
+@Serializable
+data class HexEncode(val content: String)
+
+@Serializable
+data class HexDecode(val content: String)
+
+@Serializable
+data class HtmlEncode(val content: String)
+
+@Serializable
+data class HtmlDecode(val content: String)
+
+@Serializable
+data class GzipCompress(val content: String)
+
+@Serializable
+data class GzipDecompress(val content: String)
+
+@Serializable
+data class ImportBcheck(val script: String)
+
+@Serializable
+data class AddMatchReplaceRule(val match: String, val replace: String)
+
+@Serializable
+data class AddRequestHeader(val name: String, val value: String)
+
+/** Regex match-and-replace rules applied to proxied requests. */
+object MatchReplaceRules {
+    private val rules = mutableListOf<Pair<String, String>>()
+    @Synchronized fun add(match: String, replace: String) { rules.add(match to replace) }
+    @Synchronized fun all(): List<Pair<String, String>> = rules.toList()
+    @Synchronized fun clear() { rules.clear() }
+}
+
+/** Headers injected into every outgoing HTTP request. */
+object InjectedHeaders {
+    private val headers = mutableListOf<Pair<String, String>>()
+    @Synchronized fun add(name: String, value: String) {
+        headers.removeAll { it.first.equals(name, ignoreCase = true) }
+        headers.add(name to value)
+    }
+    @Synchronized fun all(): List<Pair<String, String>> = headers.toList()
+    @Synchronized fun clear() { headers.clear() }
+}
+
+/** Tracks scan/crawl tasks started this session so scan_status can report on them. */
+object ScanRegistry {
+    data class Entry(val id: Int, val kind: String, val target: String, val task: ScanTask)
+
+    private val entries = mutableListOf<Entry>()
+    private var counter = 0
+
+    @Synchronized
+    fun add(kind: String, target: String, task: ScanTask): Int {
+        val id = counter++
+        entries.add(Entry(id, kind, target, task))
+        return id
+    }
+
+    @Synchronized
+    fun all(): List<Entry> = entries.toList()
+}
 
 @Serializable
 data class UrlEncode(val content: String)
