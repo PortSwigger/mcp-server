@@ -1,13 +1,18 @@
 package net.portswigger.mcp.providers
 
 import burp.api.montoya.logging.Logging
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
+import net.portswigger.mcp.Swing
 import net.portswigger.mcp.config.McpConfig
 import java.io.File
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import javax.swing.JFileChooser
+import javax.swing.JOptionPane
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
@@ -152,19 +157,50 @@ class ManualProxyInstallerProvider(private val logging: Logging, private val pro
     override fun install(config: McpConfig): String? {
         val proxyJarFile = proxyJarManager.getProxyJar()
 
-        val fileChooser = JFileChooser().apply {
-            dialogTitle = "Save proxy jar"
-            selectedFile = File("mcp-proxy.jar")
-        }
+        val destinationFile = runBlocking(Dispatchers.Swing) {
+            val fileChooser = JFileChooser().apply {
+                dialogTitle = "Save proxy jar"
+                selectedFile = File("mcp-proxy.jar")
+            }
+            if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                fileChooser.selectedFile.toPath()
+            } else {
+                null
+            }
+        } ?: return null
 
-        if (fileChooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) {
-            return null
+        return saveProxyJar(proxyJarFile, destinationFile) { destination ->
+            runBlocking(Dispatchers.Swing) {
+                JOptionPane.showOptionDialog(
+                    null,
+                    "A file already exists at:\n${destination.toAbsolutePath()}\n\nDo you want to replace it?",
+                    "File already exists",
+                    JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.WARNING_MESSAGE,
+                    null,
+                    arrayOf("Replace", "Cancel"),
+                    "Cancel"
+                ) == 0
+            }
         }
+    }
 
-        val destinationFile = fileChooser.selectedFile
+    internal fun saveProxyJar(
+        proxyJarFile: Path,
+        destinationFile: Path,
+        confirmOverwrite: (Path) -> Boolean
+    ): String? {
         try {
-            Files.copy(proxyJarFile, destinationFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            logging.logToOutput("MCP proxy jar saved successfully to ${destinationFile.absolutePath}")
+            try {
+                // Attempt the copy without replacement so a newly created file is also protected.
+                Files.copy(proxyJarFile, destinationFile)
+            } catch (ex: FileAlreadyExistsException) {
+                if (!confirmOverwrite(destinationFile)) {
+                    return null
+                }
+                Files.copy(proxyJarFile, destinationFile, StandardCopyOption.REPLACE_EXISTING)
+            }
+            logging.logToOutput("MCP proxy jar saved successfully to ${destinationFile.toAbsolutePath()}")
         } catch (ex: Exception) {
             logging.logToError("Failed to save installer: ${ex.message}")
             throw ex

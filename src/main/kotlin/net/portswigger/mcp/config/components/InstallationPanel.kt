@@ -101,11 +101,10 @@ class InstallationPanel(
             try {
                 val result = provider.install(config)
                 CoroutineScope(Dispatchers.Swing).launch {
-                    reinstallNotice.isVisible = false
-
                     if (result != null) {
-                        Dialogs.showMessageDialog(
-                            parentComponent, result, INFORMATION_MESSAGE
+                        reinstallNotice.isVisible = false
+                        Dialogs.showSuccessDialog(
+                            parentComponent, result
                         )
                     }
                 }

@@ -3,6 +3,7 @@ package net.portswigger.mcp.config
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.message.requests.HttpRequest
 import burp.api.montoya.ui.editor.EditorOptions
+import net.portswigger.mcp.config.components.SuccessIcon
 import java.awt.*
 import java.awt.event.ActionEvent
 import java.awt.event.KeyEvent
@@ -57,12 +58,22 @@ object Dialogs {
         }
     }
 
+    fun showSuccessDialog(parent: Component?, message: String) {
+        showMessageDialog(parent, message, JOptionPane.INFORMATION_MESSAGE, SuccessIcon())
+    }
+
     fun showMessageDialog(
-        parent: Component?, message: String, messageType: Int
+        parent: Component?, message: String, messageType: Int, icon: Icon? = null
     ) {
         val dialog = createDialog(parent)
 
-        val iconLabel = when (messageType) {
+        val iconLabel = if (icon != null) {
+            JLabel(icon).apply {
+                horizontalAlignment = SwingConstants.CENTER
+                preferredSize = Dimension(40, 40)
+                accessibleContext.accessibleName = "Success"
+            }
+        } else when (messageType) {
             JOptionPane.ERROR_MESSAGE -> JLabel("⚠").apply {
                 font = Design.Typography.headlineMedium
                 foreground = Design.Colors.error
