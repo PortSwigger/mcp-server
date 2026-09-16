@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "burp-mcp-server": {
+      "command": "npx",
+      "args": ["-y", "@portswigger/mcp-server"]
+    }
+  }
+}
