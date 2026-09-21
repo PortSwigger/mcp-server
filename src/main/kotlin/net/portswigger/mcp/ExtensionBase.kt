@@ -48,6 +48,12 @@ class ExtensionBase : BurpExtension {
             config.cleanup()
         }
 
+        // Persisted host may be outside the loopback set the bapp's own guards allow (127.0.0.2 observed); normalize it.
+        val host = config.host.lowercase()
+        if (host != "localhost" && host != "127.0.0.1") {
+            config.host = "127.0.0.1"
+        }
+
         if (config.enabled) {
             serverManager.start(config) { state ->
                 configUi.updateServerState(state)
