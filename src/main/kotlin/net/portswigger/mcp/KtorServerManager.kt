@@ -104,7 +104,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
                 api.logging().logToOutput("Started MCP server on ${config.host}:${config.port}")
                 callback(ServerState.Running)
 
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 api.logging().logToError(e)
                 callback(ServerState.Failed(e))
             }

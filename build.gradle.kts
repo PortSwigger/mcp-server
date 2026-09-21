@@ -126,6 +126,16 @@ tasks {
         exclude("module-info.class")
 
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+        // Burp's parent classloader bundles its own kotlinx.coroutines (older). Parent-first bapp
+        // loading shadows this jar's newer copy -> NoSuchMethodError (runBlockingK$default) at startup.
+        // Relocate only coroutines into a bapp-private namespace.
+        // DO NOT relocate the `kotlin` root: kotlin.Any/Unit/Nothing have no class files on the JVM
+        // (they map to java.lang built-ins), so shading them breaks the runtime's built-in check
+        // ("Built-in class ...shaded.kotlin.Any is not found"). Burp's parent stdlib serves kotlin.*
+        // fine; ponytail: if Burp's stdlib ever proves too old for our Kotlin 2.4 bytecode, relocate
+        // the specific kotlin packages that collide (not the root).
+        relocate("kotlinx.coroutines", "net.portswigger.mcp.shaded.kotlinx.coroutines")
     }
 
     register<EmbedProxyJarTask>("embedProxyJar") {
