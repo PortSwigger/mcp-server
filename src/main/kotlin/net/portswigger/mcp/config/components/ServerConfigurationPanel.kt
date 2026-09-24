@@ -56,6 +56,14 @@ class ServerConfigurationPanel(
         add(configEditingToolingCheckBox)
         add(createVerticalStrut(Design.Spacing.MD))
 
+        val stateEditingToolingCheckBox = createCheckBoxWithSubtitle(
+            "Enable tools that change Burp state",
+            "Scope, scans, cookie jar, annotations, BChecks, Organizer",
+            config.stateEditingTooling
+        ) { config.stateEditingTooling = it }
+        add(stateEditingToolingCheckBox)
+        add(createVerticalStrut(Design.Spacing.MD))
+
         val httpRequestApprovalCheckBox = createStandardCheckBox(
             "Require approval for HTTP requests", config.requireHttpRequestApproval
         ) { config.requireHttpRequestApproval = it }

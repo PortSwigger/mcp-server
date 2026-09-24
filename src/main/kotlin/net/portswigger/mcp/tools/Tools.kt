@@ -13,6 +13,7 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import net.portswigger.mcp.TrafficLog
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.encodeHistoryItem
 import net.portswigger.mcp.schema.toSerializableForm
@@ -24,7 +25,7 @@ import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
 import javax.swing.JTextArea
 
-private suspend fun checkDataAccessOrDeny(
+internal suspend fun checkDataAccessOrDeny(
     accessType: DataAccessType, config: McpConfig, api: MontoyaApi, logMessage: String
 ): Boolean {
     val allowed = DataAccessSecurity.checkDataAccessPermission(accessType, config)
@@ -108,28 +109,41 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\r", "")          // Actual CR → remove
     .replace("\n", "\r\n")      // All LF → proper CRLF
 
-fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
+fun Server.registerTools(api: MontoyaApi, config: McpConfig, trafficLog: TrafficLog = TrafficLog()) {
+    registerHistoryTools(api, config)
+    registerSiteMapTools(api, config)
+    registerTrafficLogTools(api, config, trafficLog)
+    registerParallelSendTools(api, config)
+    registerProjectTools(api, config, trafficLog)
 
-    mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
+    mcpPaginatedBytesTool<SendHttp1Request>(
+        "Issues an HTTP/1.1 request and returns the response. Response is paginated by bytes via offset/count. " +
+                "For binary bodies put only the request line and headers in content and pass the body as bodyBase64 " +
+                "(Content-Length is updated). $SEND_OPTIONS_DESCRIPTION"
+    ) {
         val allowed = runBlocking {
             HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
         }
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
-            return@mcpTool "Send HTTP request denied by Burp Suite"
+            return@mcpPaginatedBytesTool "Send HTTP request denied by Burp Suite"
         }
 
         api.logging().logToOutput("MCP HTTP/1.1 request: $targetHostname:$targetPort")
 
         val fixedContent = normalizeHttpContent(content)
 
-        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
-        val response = api.http().sendRequest(request)
+        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent).withBase64Body(bodyBase64)
+        val response = sendWithOptions(api, request, null, this)
 
         response?.toString() ?: "<no response>"
     }
 
-    mcpTool<SendHttp2Request>("Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter.") {
+    mcpPaginatedBytesTool<SendHttp2Request>(
+        "Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter. " +
+                "requestBody may be omitted; use requestBodyBase64 for binary bodies. " +
+                "Response is paginated by bytes via offset/count. $SEND_OPTIONS_DESCRIPTION"
+    ) {
         val http2RequestDisplay = buildString {
             pseudoHeaders.forEach { (key, value) ->
                 val headerName = if (key.startsWith(":")) key else ":$key"
@@ -149,15 +163,15 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
-            return@mcpTool "Send HTTP request denied by Burp Suite"
+            return@mcpPaginatedBytesTool "Send HTTP request denied by Burp Suite"
         }
 
         api.logging().logToOutput("MCP HTTP/2 request: $targetHostname:$targetPort")
 
         val headerList = buildHttp2HeaderList(pseudoHeaders, headers)
 
-        val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody)
-        val response = api.http().sendRequest(request, HttpMode.HTTP_2)
+        val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody).withBase64Body(requestBodyBase64)
+        val response = sendWithOptions(api, request, HttpMode.HTTP_2, this)
 
         response?.toString() ?: "<no response>"
     }
@@ -259,8 +273,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         mcpTool<GenerateCollaboratorPayload>(
             "Generates a Burp Collaborator payload URL for out-of-band (OOB) testing. " +
-            "Inject this payload into requests to detect server-side interactions (DNS lookups, HTTP requests, SMTP). " +
-            "Use get_collaborator_interactions with the returned payloadId to check for interactions."
+                    "Inject this payload into requests to detect server-side interactions (DNS lookups, HTTP requests, SMTP). " +
+                    "Use get_collaborator_interactions with the returned payloadId to check for interactions."
         ) {
             api.logging().logToOutput("MCP generating Collaborator payload${customData?.let { " with custom data" } ?: ""}")
 
@@ -276,8 +290,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
         mcpTool<GetCollaboratorInteractions>(
             "Polls Burp Collaborator for out-of-band interactions (DNS, HTTP, SMTP). " +
-            "Optionally filter by payloadId from generate_collaborator_payload. " +
-            "Returns interaction details including type, timestamp, client IP, and protocol-specific data."
+                    "Optionally filter by payloadId from generate_collaborator_payload. " +
+                    "Returns interaction details including type, timestamp, client IP, and protocol-specific data."
         ) {
             api.logging().logToOutput("MCP polling Collaborator interactions${payloadId?.let { " for payload: $it" } ?: ""}")
 
@@ -431,18 +445,32 @@ data class SendHttp1Request(
     val content: String,
     override val targetHostname: String,
     override val targetPort: Int,
-    override val usesHttps: Boolean
-) : HttpServiceParams
+    override val usesHttps: Boolean,
+    val bodyBase64: String? = null,
+    override val responseTimeoutMs: Int? = null,
+    override val redirectionMode: String? = null,
+    override val serverNameIndicator: String? = null,
+    override val addToSiteMap: Boolean = false,
+    override val count: Int = DEFAULT_RESPONSE_PAGE_BYTES,
+    override val offset: Int = 0
+) : HttpServiceParams, SendOptionsParams, Paginated
 
 @Serializable
 data class SendHttp2Request(
     val pseudoHeaders: Map<String, String>,
     val headers: Map<String, String>,
-    val requestBody: String,
+    val requestBody: String = "",
     override val targetHostname: String,
     override val targetPort: Int,
-    override val usesHttps: Boolean
-) : HttpServiceParams
+    override val usesHttps: Boolean,
+    val requestBodyBase64: String? = null,
+    override val responseTimeoutMs: Int? = null,
+    override val redirectionMode: String? = null,
+    override val serverNameIndicator: String? = null,
+    override val addToSiteMap: Boolean = false,
+    override val count: Int = DEFAULT_RESPONSE_PAGE_BYTES,
+    override val offset: Int = 0
+) : HttpServiceParams, SendOptionsParams, Paginated
 
 @Serializable
 data class CreateRepeaterTab(

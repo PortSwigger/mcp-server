@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.serializer
 import net.portswigger.mcp.schema.asInputSchema
 import kotlin.experimental.ExperimentalTypeInference
+import kotlin.math.ceil
 
 @OptIn(InternalSerializationApi::class)
 inline fun <reified I : Any> Server.mcpTool(
@@ -106,6 +107,58 @@ inline fun <reified I : Paginated> Server.mcpPaginatedTool(
             listOf(TextContent(paginated.joinToString(separator = "\n\n")))
         }
     })
+}
+
+const val DEFAULT_RESPONSE_PAGE_BYTES = 800_000
+
+/**
+ * Variant of mcpPaginatedTool for tools that return a single (potentially large) string.
+ *
+ * Here, [offset] is a **byte offset** into the response and [count] is the **maximum number
+ * of bytes** to return in this page. Both are optional (defaults: offset=0,
+ * count=[DEFAULT_RESPONSE_PAGE_BYTES], which stays under the 1 MB MCP tool-result limit).
+ * If the whole response fits into the first page it is returned verbatim, otherwise a header
+ * tells the caller which offset to request next. Page boundaries never split a UTF-8 character.
+ */
+inline fun <reified I : Paginated> Server.mcpPaginatedBytesTool(
+    description: String,
+    crossinline execute: I.() -> String
+) {
+    mcpTool<I>(description, execute = {
+        val full = execute(this)
+        val bytes = full.toByteArray(Charsets.UTF_8)
+        val totalBytes = bytes.size
+        val pageSize = count.coerceAtLeast(1)
+        val start = utf8Boundary(bytes, offset.coerceAtLeast(0))
+
+        if (start == 0 && totalBytes <= pageSize) {
+            full
+        } else if (start >= totalBytes) {
+            "Reached end of response (total bytes: $totalBytes)"
+        } else {
+            val end = utf8Boundary(bytes, (start + pageSize).coerceAtMost(totalBytes)).let { if (it <= start) (start + pageSize).coerceAtMost(totalBytes) else it }
+            val chunk = String(bytes, start, end - start, Charsets.UTF_8)
+            val remaining = totalBytes - end
+            val totalPages = ceil(totalBytes.toDouble() / pageSize).toInt()
+            val currentPage = ceil(end.toDouble() / pageSize).toInt()
+
+            buildString {
+                appendLine("=== Page $currentPage of ~$totalPages | bytes $start–$end of $totalBytes | ${if (remaining > 0) "$remaining bytes remaining" else "last page"} ===")
+                if (remaining > 0) {
+                    appendLine("Call again with offset=$end to get the next page.")
+                }
+                appendLine()
+                append(chunk)
+            }
+        }
+    })
+}
+
+/** Moves [index] back to the start of the UTF-8 character it falls into. */
+fun utf8Boundary(bytes: ByteArray, index: Int): Int {
+    var i = index.coerceAtMost(bytes.size)
+    while (i in 1 until bytes.size && (bytes[i].toInt() and 0xC0) == 0x80) i--
+    return i
 }
 
 @OptIn(ExperimentalTypeInference::class)

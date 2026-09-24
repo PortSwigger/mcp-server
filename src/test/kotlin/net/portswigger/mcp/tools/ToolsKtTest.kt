@@ -48,7 +48,9 @@ class ToolsKtTest {
     
     private val client = TestSseMcpClient()
     private val api = mockk<MontoyaApi>(relaxed = true)
-    private val serverManager = KtorServerManager(api)
+    private lateinit var persistedObject: PersistedObject
+    private val trafficLog = net.portswigger.mcp.TrafficLog(capacity = 3)
+    private val serverManager = KtorServerManager(api, trafficLog)
     private val testPort = findAvailablePort()
     private var serverStarted = false
     private val config: McpConfig
@@ -56,9 +58,10 @@ class ToolsKtTest {
     private val capturedRequest = slot<HttpRequest>()
 
     init {
-        val persistedObject = mockk<PersistedObject>().apply {
+        persistedObject = mockk<PersistedObject>().apply {
             every { getBoolean("enabled") } returns true
             every { getBoolean("configEditingTooling") } returns true
+            every { getBoolean("stateEditingTooling") } returns true
             every { getBoolean("requireHttpRequestApproval") } returns false
             every { getBoolean("requireDataAccessApproval") } returns false
             every { getBoolean("_alwaysAllowHttpHistory") } returns false
@@ -196,6 +199,43 @@ class ToolsKtTest {
 
             verify(exactly = 1) { httpService.sendRequest(any<HttpRequest>()) }
             assertEquals("GET /foo HTTP/1.1\r\nHost: example.com\r\n\r\n", capturedRequest.captured.toString(), "Request body should match")
+        }
+
+        @Test
+        fun `http1 large response should be paginated by bytes`() {
+            val httpService = mockk<Http>()
+            val httpResponse = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+            val body = "HTTP/1.1 200 OK\r\n\r\n" + "é".repeat(20)
+
+            every { HttpRequest.httpRequest(any(), any<String>()) } returns mockk<HttpRequest>(relaxed = true)
+            every { api.http() } returns httpService
+            every { httpResponse.toString() } returns body
+            every { httpService.sendRequest(any<HttpRequest>()) } returns httpResponse
+
+            fun page(offset: Int) = runBlocking {
+                client.callTool(
+                    "send_http1_request", mapOf(
+                        "content" to "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                        "targetHostname" to "example.com",
+                        "targetPort" to 80,
+                        "usesHttps" to false,
+                        "count" to 26,
+                        "offset" to offset
+                    )
+                ).expectTextContent()
+            }
+
+            val first = page(0)
+            // 19-byte status line + 2-byte chars: a 26-byte page must stop at 25, not mid-character
+            assertTrue(first.contains("Call again with offset=25"), first)
+            assertTrue(first.endsWith("\r\n\r\n" + "é".repeat(3)), first)
+            val second = page(25)
+            assertTrue(second.contains("Call again with offset=51"), second)
+            assertTrue(second.endsWith("\n" + "é".repeat(13)), second)
+            val last = page(51)
+            assertTrue(last.contains("last page"), last)
+            assertTrue(last.endsWith("\n" + "é".repeat(4)), last)
+            assertTrue(page(1000).startsWith("Reached end of response"))
         }
 
         @Test
@@ -1101,6 +1141,294 @@ class ToolsKtTest {
             assertTrue(tools.any { it.name == "get_scanner_issues" })
             assertTrue(tools.any { it.name == "generate_collaborator_payload" })
             assertTrue(tools.any { it.name == "get_collaborator_interactions" })
+        }
+    }
+
+    @Nested
+    inner class HistoryAndSiteMapToolsTests {
+        private fun historyItem(itemId: Int, path: String, status: Short, body: String): ProxyHttpRequestResponse {
+            val request = mockk<HttpRequest>(relaxed = true).also {
+                every { it.method() } returns "GET"
+                every { it.url() } returns "https://example.com$path"
+                every { it.toString() } returns "GET $path HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            }
+            val response = mockk<burp.api.montoya.http.message.responses.HttpResponse>(relaxed = true).also {
+                every { it.statusCode() } returns status
+                every { it.body().length() } returns body.length
+                every { it.mimeType() } returns burp.api.montoya.http.message.MimeType.JSON
+                every { it.toString() } returns "HTTP/1.1 $status OK\r\nX-A: b\r\n\r\n$body"
+                every { it.bodyOffset() } returns "HTTP/1.1 $status OK\r\nX-A: b\r\n\r\n".length
+                every { it.bodyToString() } returns body
+            }
+            return mockk<ProxyHttpRequestResponse>(relaxed = true).also {
+                every { it.id() } returns itemId
+                every { it.url() } returns "https://example.com$path"
+                every { it.time() } returns ZonedDateTime.parse("2026-09-24T10:00:00Z")
+                every { it.finalRequest() } returns request
+                every { it.request() } returns request
+                every { it.response() } returns response
+                every { it.annotations().notes() } returns ""
+            }
+        }
+
+        private fun mockHistory(vararg items: ProxyHttpRequestResponse) {
+            val proxy = mockk<Proxy>()
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns items.toList()
+            every { proxy.history(any<burp.api.montoya.proxy.ProxyHistoryFilter>()) } answers {
+                val filter = firstArg<burp.api.montoya.proxy.ProxyHistoryFilter>()
+                items.filter { filter.matches(it) }
+            }
+        }
+
+        @Test
+        fun `history summary lists newest first and filters by url`() {
+            mockHistory(historyItem(1, "/a", 200, "{}"), historyItem(2, "/api/b", 404, "nope"), historyItem(3, "/api/c", 200, "[1]"))
+
+            runBlocking {
+                val all = client.callTool("get_proxy_http_history_summary", emptyMap()).expectTextContent()
+                val lines = all.lines()
+                assertEquals("=== Items 1–3 of 3 ===", lines[0])
+                assertTrue(lines[1].startsWith("#3 ") && lines[1].contains("GET https://example.com/api/c -> 200 3B json"), all)
+                assertTrue(lines[3].startsWith("#1 "), all)
+
+                val filtered = client.callTool(
+                    "get_proxy_http_history_summary", mapOf("urlRegex" to "/api/", "count" to 1)
+                ).expectTextContent()
+                assertTrue(filtered.startsWith("=== Items 1–1 of 2 | call again with offset=1 for more ==="), filtered)
+                assertTrue(filtered.contains("#3 "), filtered)
+            }
+        }
+
+        @Test
+        fun `history item returns the requested part by id`() {
+            mockHistory(historyItem(1, "/a", 200, "{}"), historyItem(7, "/secret", 200, "{\"k\":1}"))
+
+            runBlocking {
+                val body = client.callTool(
+                    "get_proxy_http_history_item", mapOf("id" to 7, "part" to "response_body")
+                ).expectTextContent()
+                assertTrue(body.startsWith("# id=7 "), body)
+                assertTrue(body.endsWith("{\"k\":1}"), body)
+                assertFalse(body.contains("X-A"), body)
+
+                val headers = client.callTool(
+                    "get_proxy_http_history_item", mapOf("id" to 7, "part" to "RESPONSE_HEADERS")
+                ).expectTextContent()
+                assertTrue(headers.contains("X-A: b") && !headers.contains("{\"k\""), headers)
+
+                client.callTool("get_proxy_http_history_item", mapOf("id" to 99))
+                    .expectTextContent("No proxy history item with id 99")
+            }
+        }
+
+        @Test
+        fun `site map summary and item use stable indexes`() {
+            val first = historyItem(1, "/x", 200, "one")
+            val second = historyItem(2, "/y", 500, "two")
+            val siteMapEntries = listOf(first, second).map { proxyItem ->
+                mockk<burp.api.montoya.http.message.HttpRequestResponse>(relaxed = true).also {
+                    every { it.request() } returns proxyItem.request()
+                    every { it.response() } returns proxyItem.response()
+                    every { it.annotations().notes() } returns ""
+                }
+            }
+            every { api.siteMap().requestResponses() } returns siteMapEntries
+
+            runBlocking {
+                val summary = client.callTool("get_site_map_summary", emptyMap()).expectTextContent()
+                assertTrue(summary.contains("[1] GET https://example.com/y -> 500 3B json"), summary)
+
+                client.callTool("get_site_map_item", mapOf("index" to 1, "part" to "response_body"))
+                    .expectTextContent("two")
+            }
+        }
+
+        @Test
+        fun `scope changes require state editing to be enabled`() {
+            every { persistedObject.getBoolean("stateEditingTooling") } returns false
+
+            runBlocking {
+                client.callTool("include_in_scope", mapOf("url" to "https://example.com/"))
+                    .expectTextContent(STATE_EDITING_DISABLED_MESSAGE)
+            }
+            verify(exactly = 0) { api.scope().includeInScope(any()) }
+
+            every { persistedObject.getBoolean("stateEditingTooling") } returns true
+            runBlocking {
+                client.callTool("include_in_scope", mapOf("url" to "https://example.com/"))
+                    .expectTextContent("Included in scope: https://example.com/")
+            }
+            verify(exactly = 1) { api.scope().includeInScope("https://example.com/") }
+        }
+    }
+
+    @Nested
+    inner class TrafficLogToolsTests {
+        private fun exchange(path: String, status: Short, body: String) =
+            mockk<burp.api.montoya.http.message.HttpRequestResponse>(relaxed = true).also {
+                val request = mockk<HttpRequest>(relaxed = true)
+                every { request.method() } returns "POST"
+                every { request.url() } returns "https://example.com$path"
+                val response = mockk<burp.api.montoya.http.message.responses.HttpResponse>(relaxed = true)
+                every { response.statusCode() } returns status
+                every { response.body().length() } returns body.length
+                every { response.mimeType() } returns burp.api.montoya.http.message.MimeType.HTML
+                every { response.bodyToString() } returns body
+                every { it.request() } returns request
+                every { it.response() } returns response
+            }
+
+        @Test
+        fun `traffic log keeps the latest entries and filters by tool`() {
+            val time = ZonedDateTime.parse("2026-09-24T10:00:00Z")
+            trafficLog.record(burp.api.montoya.core.ToolType.REPEATER, exchange("/r1", 200, "a"), time)
+            trafficLog.record(burp.api.montoya.core.ToolType.INTRUDER, exchange("/i1", 500, "bb"), time)
+            trafficLog.record(burp.api.montoya.core.ToolType.REPEATER, exchange("/r2", 302, "ccc"), time)
+            trafficLog.record(burp.api.montoya.core.ToolType.INTRUDER, exchange("/i2", 200, "dddd"), time)
+
+            assertEquals(listOf(2, 3, 4), trafficLog.snapshot().map { it.id }, "Oldest entry should be evicted")
+
+            runBlocking {
+                val repeater = client.callTool("get_traffic_log_summary", mapOf("tool" to "repeater")).expectTextContent()
+                assertEquals(
+                    "=== Items 1–1 of 1 ===\n#3 2026-09-24T10:00 repeater POST https://example.com/r2 -> 302 3B html",
+                    repeater
+                )
+
+                client.callTool("get_traffic_log_item", mapOf("id" to 4, "part" to "response_body"))
+                    .expectTextContent().let { assertTrue(it.startsWith("# id=4 ") && it.endsWith("dddd"), it) }
+
+                client.callTool("get_traffic_log_item", mapOf("id" to 1)).expectTextContent()
+                    .let { assertTrue(it.startsWith("No traffic log entry with id 1"), it) }
+            }
+        }
+    }
+
+    @Nested
+    inner class SendOptionsTests {
+        private fun responseWith(text: String, status: Short = 200) =
+            mockk<burp.api.montoya.http.message.HttpRequestResponse>(relaxed = true).also {
+                every { it.toString() } returns text
+                every { it.response().toString() } returns text
+                every { it.response().statusCode() } returns status
+                every { it.response().body().length() } returns 2
+                every { it.timingData() } returns Optional.empty()
+            }
+
+        @Test
+        fun `http2 request body is optional`() {
+            val httpService = mockk<Http>()
+            every { api.http() } returns httpService
+            every { HttpRequest.http2Request(any(), any<List<HttpHeader>>(), any<String>()) } returns mockk(relaxed = true)
+            every { httpService.sendRequest(any(), HttpMode.HTTP_2) } returns responseWith("HTTP/2 200")
+
+            runBlocking {
+                client.callTool(
+                    "send_http2_request", mapOf(
+                        "pseudoHeaders" to mapOf("method" to "GET", "path" to "/"),
+                        "headers" to emptyMap<String, String>(),
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true
+                    )
+                ).expectTextContent("HTTP/2 200")
+            }
+        }
+
+        @Test
+        fun `http1 options are applied and exchange added to site map`() {
+            val httpService = mockk<Http>()
+            val options = mockk<burp.api.montoya.http.RequestOptions>()
+            val result = responseWith("HTTP/1.1 200 OK")
+            mockkStatic(burp.api.montoya.http.RequestOptions::class)
+            every { burp.api.montoya.http.RequestOptions.requestOptions() } returns options
+            every { options.withResponseTimeout(any()) } returns options
+            every { options.withRedirectionMode(any()) } returns options
+            every { api.http() } returns httpService
+            every { HttpRequest.httpRequest(any(), any<String>()) } returns mockk(relaxed = true)
+            every { httpService.sendRequest(any(), options) } returns result
+
+            runBlocking {
+                client.callTool(
+                    "send_http1_request", mapOf(
+                        "content" to "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true,
+                        "responseTimeoutMs" to 120000,
+                        "redirectionMode" to "never",
+                        "addToSiteMap" to true
+                    )
+                ).expectTextContent("HTTP/1.1 200 OK")
+            }
+
+            verify { options.withResponseTimeout(120_000L) }
+            verify { options.withRedirectionMode(burp.api.montoya.http.RedirectionMode.NEVER) }
+            verify { api.siteMap().add(result) }
+        }
+
+        @Test
+        fun `parallel requests return a line per response`() {
+            val httpService = mockk<Http>()
+            every { api.http() } returns httpService
+            every { HttpRequest.httpRequest(any(), any<String>()) } returns mockk(relaxed = true)
+            every { httpService.sendRequests(any<List<HttpRequest>>()) } returns
+                    listOf(responseWith("HTTP/1.1 200 OK"), responseWith("HTTP/1.1 409 Conflict", 409))
+
+            runBlocking {
+                val text = client.callTool(
+                    "send_http_requests_parallel", mapOf(
+                        "contents" to listOf("POST /redeem HTTP/1.1\r\nHost: example.com\r\n\r\n", "POST /redeem HTTP/1.1\r\nHost: example.com\r\n\r\n"),
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true,
+                        "maxResponseBytes" to 8
+                    )
+                ).expectTextContent()
+                assertEquals("[0] 200 2B ?ms\nHTTP/1.1\n\n[1] 409 2B ?ms\nHTTP/1.1", text)
+            }
+        }
+    }
+
+    @Nested
+    inner class ProjectToolsTests {
+        @Test
+        fun `cookie jar lists and filters cookies`() {
+            val cookies = listOf("a.example.com" to "sid", "other.test" to "x").map { (domain, name) ->
+                mockk<burp.api.montoya.http.message.Cookie>().also {
+                    every { it.domain() } returns domain
+                    every { it.path() } returns "/"
+                    every { it.name() } returns name
+                    every { it.value() } returns "v"
+                    every { it.expiration() } returns Optional.empty()
+                }
+            }
+            every { api.http().cookieJar().cookies() } returns cookies
+
+            runBlocking {
+                client.callTool("get_cookie_jar", mapOf("domainRegex" to "example\\.com$"))
+                    .expectTextContent("a.example.com / sid=v")
+            }
+        }
+
+        @Test
+        fun `set cookie passes path and domain in montoya order`() {
+            runBlocking {
+                client.callTool("set_cookie", mapOf("name" to "sid", "value" to "1", "domain" to "example.com", "path" to "/app"))
+                    .expectTextContent("Cookie sid set for example.com")
+            }
+            verify { api.http().cookieJar().setCookie("sid", "1", "/app", "example.com", null) }
+        }
+
+        @Test
+        fun `bambda import requires config editing`() {
+            every { persistedObject.getBoolean("configEditingTooling") } returns false
+            runBlocking {
+                val text = client.callTool("import_bambda", mapOf("script" to "return true;")).expectTextContent()
+                assertTrue(text.startsWith("User has disabled configuration editing"), text)
+            }
+            verify(exactly = 0) { api.bambda().importBambda(any()) }
         }
     }
 }
