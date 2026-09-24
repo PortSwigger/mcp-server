@@ -1390,4 +1390,45 @@ class ToolsKtTest {
             }
         }
     }
+
+    @Nested
+    inner class ProjectToolsTests {
+        @Test
+        fun `cookie jar lists and filters cookies`() {
+            val cookies = listOf("a.example.com" to "sid", "other.test" to "x").map { (domain, name) ->
+                mockk<burp.api.montoya.http.message.Cookie>().also {
+                    every { it.domain() } returns domain
+                    every { it.path() } returns "/"
+                    every { it.name() } returns name
+                    every { it.value() } returns "v"
+                    every { it.expiration() } returns Optional.empty()
+                }
+            }
+            every { api.http().cookieJar().cookies() } returns cookies
+
+            runBlocking {
+                client.callTool("get_cookie_jar", mapOf("domainRegex" to "example\\.com$"))
+                    .expectTextContent("a.example.com / sid=v")
+            }
+        }
+
+        @Test
+        fun `set cookie passes path and domain in montoya order`() {
+            runBlocking {
+                client.callTool("set_cookie", mapOf("name" to "sid", "value" to "1", "domain" to "example.com", "path" to "/app"))
+                    .expectTextContent("Cookie sid set for example.com")
+            }
+            verify { api.http().cookieJar().setCookie("sid", "1", "/app", "example.com", null) }
+        }
+
+        @Test
+        fun `bambda import requires config editing`() {
+            every { persistedObject.getBoolean("configEditingTooling") } returns false
+            runBlocking {
+                val text = client.callTool("import_bambda", mapOf("script" to "return true;")).expectTextContent()
+                assertTrue(text.startsWith("User has disabled configuration editing"), text)
+            }
+            verify(exactly = 0) { api.bambda().importBambda(any()) }
+        }
+    }
 }

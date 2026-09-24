@@ -114,6 +114,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig, trafficLog: Traffic
     registerSiteMapTools(api, config)
     registerTrafficLogTools(api, config, trafficLog)
     registerParallelSendTools(api, config)
+    registerProjectTools(api, config, trafficLog)
 
     mcpPaginatedBytesTool<SendHttp1Request>(
         "Issues an HTTP/1.1 request and returns the response. Response is paginated by bytes via offset/count. " +
