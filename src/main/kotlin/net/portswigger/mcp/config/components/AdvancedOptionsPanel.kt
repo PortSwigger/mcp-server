@@ -13,6 +13,7 @@ import javax.swing.event.DocumentListener
 class AdvancedOptionsPanel(
     private val hostField: JTextField,
     private val portField: JTextField,
+    private val allowedHostsField: JTextField,
     private val reinstallNotice: WarningLabel
 ) : JPanel() {
 
@@ -43,14 +44,23 @@ class AdvancedOptionsPanel(
         add(createVerticalStrut(Design.Spacing.MD))
 
         val formPanel = createFormPanel(
-            "Server host:" to hostField, "Server port:" to portField
+            "Server host:" to hostField,
+            "Server port:" to portField,
+            "Allowed remote hosts:" to allowedHostsField
         )
         add(formPanel)
+        add(createVerticalStrut(Design.Spacing.SM))
+        add(JLabel("Comma-separated IP addresses or hostnames allowed to connect (requires server restart).").apply {
+            font = Design.Typography.bodyLarge
+            foreground = Design.Colors.onSurfaceVariant
+            alignmentX = LEFT_ALIGNMENT
+        })
     }
 
     private fun setupFieldTracking() {
         trackChanges(hostField)
         trackChanges(portField)
+        trackChanges(allowedHostsField)
     }
 
     private fun trackChanges(field: JTextField) {
@@ -106,6 +116,7 @@ class AdvancedOptionsPanel(
     fun setFieldsEnabled(enabled: Boolean) {
         hostField.isEnabled = enabled
         portField.isEnabled = enabled
+        allowedHostsField.isEnabled = enabled
     }
 
 }

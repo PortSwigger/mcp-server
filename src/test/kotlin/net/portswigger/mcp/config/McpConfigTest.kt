@@ -273,6 +273,19 @@ class McpConfigTest {
     }
 
     @Test
+    fun `allowedHosts should sanitize invalid entries on set`() {
+        config.allowedHosts = "192.168.178.67, bad host!, 192.168.32.129"
+
+        assertEquals("192.168.178.67,192.168.32.129", config.allowedHosts)
+        assertEquals(listOf("192.168.178.67", "192.168.32.129"), config.getAllowedHostsList())
+    }
+
+    @Test
+    fun `getAllowedHostsList should handle empty config`() {
+        assertEquals(emptyList<String>(), config.getAllowedHostsList())
+    }
+
+    @Test
     fun `requireHttpRequestApproval should persist correctly`() {
         assertTrue(config.requireHttpRequestApproval)
 
