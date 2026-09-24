@@ -53,6 +53,12 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private var toggleListener: ((Boolean) -> Unit)? = null
     private var suppressToggleEvents: Boolean = false
 
+    private val dataAccessRefreshListener: () -> Unit = {
+        SwingUtilities.invokeLater {
+            serverConfigurationPanel.updateDataAccessCheckboxes()
+        }
+    }
+
     init {
         enabledToggle.setState(config.enabled, animate = false)
         hostField.text = config.host
@@ -81,12 +87,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     }
 
     private fun setupConfigListeners() {
-        val historyAccessRefreshListener = {
-            SwingUtilities.invokeLater {
-                serverConfigurationPanel.updateHistoryAccessCheckboxes()
-            }
-        }
-        val handle = config.addHistoryAccessChangeListener(historyAccessRefreshListener)
+        val handle = config.addDataAccessChangeListener(dataAccessRefreshListener)
         listenerHandles.add(handle)
     }
 

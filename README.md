@@ -110,14 +110,9 @@ If you want to install the MCP server manually you can either use the extension'
 Stdio proxy server.
 
 ### SSE MCP Server
-In order to use the SSE server directly you can just provide the url for the server in your client's configuration. Depending
-on your client and your configuration in the extension this may be with or without the `/sse` path.
+To use the SSE server directly, provide the configured server URL to your MCP client:
 ```
 http://127.0.0.1:9876
-```
-or
-```
-http://127.0.0.1:9876/sse
 ```
 
 ### Stdio MCP Proxy Server
@@ -132,12 +127,22 @@ Once you have the jar you can add the following command and args to your client 
 /path/to/packaged/burp/java -jar /path/to/proxy/jar/mcp-proxy-all.jar --sse-url http://127.0.0.1:9876
 ```
 
+If you modify the proxy source, rebuild and copy it into this project before packaging the extension:
+```bash
+# From mcp-proxy
+./gradlew shadowJar
+cp build/libs/mcp-proxy-all.jar /path/to/mcp-server/libs/mcp-proxy-all.jar
+
+# From mcp-server
+./gradlew embedProxyJar
+```
+
 ### Creating / modifying tools
 
 Tools are defined in `src/main/kotlin/net/portswigger/mcp/tools/Tools.kt`. To define new tools, create a new serializable
 data class with the required parameters which will come from the LLM.
 
 The tool name is auto-derived from its parameters data class. A description is also needed for the LLM. You can return
-a string (or richer PromptMessageContents) to provide data back to the LLM.
+a string or a `List<ContentBlock>` to provide data back to the LLM.
 
 Extend the Paginated interface to add auto-pagination support.

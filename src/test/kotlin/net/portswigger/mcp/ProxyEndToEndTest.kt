@@ -5,7 +5,7 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import io.mockk.every
 import io.mockk.mockk
-import io.modelcontextprotocol.kotlin.sdk.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import net.portswigger.mcp.config.McpConfig
@@ -159,7 +159,7 @@ class ProxyEndToEndTest {
         runBlocking {
             val result = client.callTool("url_encode", mapOf("content" to "hello world"))
             assertNotNull(result, "Tool call result should not be null")
-            assertFalse(result?.isError ?: true, "Tool call should not return an error")
+            assertFalse(result?.isError ?: false, "Tool call should not return an error")
             assertTrue(result?.content?.first() is TextContent, "Result should contain TextContent")
         }
     }

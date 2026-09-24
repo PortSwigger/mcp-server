@@ -7,6 +7,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
+private const val TARGET_SEPARATOR = "\n"
+
 class McpConfig(storage: PersistedObject, private val logging: Logging) {
 
     var enabled by storage.boolean(true)
@@ -14,7 +16,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     var host by storage.string("127.0.0.1")
     var port by storage.int(9876)
     var requireHttpRequestApproval by storage.boolean(true)
-    var requireHistoryAccessApproval by storage.boolean(true)
+    var requireDataAccessApproval by storage.boolean(true)
 
     private var _alwaysAllowHttpHistory by storage.boolean(false)
     var alwaysAllowHttpHistory: Boolean
@@ -22,7 +24,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         set(value) {
             if (_alwaysAllowHttpHistory != value) {
                 _alwaysAllowHttpHistory = value
-                notifyHistoryAccessChanged()
+                notifyDataAccessChanged()
             }
         }
 
@@ -32,13 +34,25 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         set(value) {
             if (_alwaysAllowWebSocketHistory != value) {
                 _alwaysAllowWebSocketHistory = value
-                notifyHistoryAccessChanged()
+                notifyDataAccessChanged()
             }
         }
 
+    private var _alwaysAllowOrganizer by storage.boolean(false)
+    var alwaysAllowOrganizer: Boolean
+        get() = _alwaysAllowOrganizer
+        set(value) {
+            if (_alwaysAllowOrganizer != value) {
+                _alwaysAllowOrganizer = value
+                notifyDataAccessChanged()
+            }
+        }
+
+    var filterConfigCredentials by storage.boolean(true)
+
     private var _autoApproveTargets by storage.stringList("")
     private val targetsChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
-    private val historyAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
+    private val dataAccessChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
 
     var autoApproveTargets: String
         get() = _autoApproveTargets
@@ -49,21 +63,29 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
             }
         }
 
-    fun addAutoApproveTarget(target: String): Boolean {
-        val currentTargets = getAutoApproveTargetsList()
-        if (target.trim().isNotEmpty() && !currentTargets.contains(target.trim())) {
-            val newTargets = currentTargets + target.trim()
-            autoApproveTargets = newTargets.joinToString(",")
-            return true
+    init {
+        val current = getAutoApproveTargetsList()
+        val valid = current.filter { TargetValidation.isValidTarget(it) }
+        if (valid.size != current.size) {
+            _autoApproveTargets = valid.joinToString(TARGET_SEPARATOR)
         }
-        return false
+    }
+
+    fun addAutoApproveTarget(target: String): Boolean {
+        val trimmed = target.trim()
+        if (!TargetValidation.isValidTarget(trimmed)) return false
+        val currentTargets = getAutoApproveTargetsList()
+        if (currentTargets.contains(trimmed)) return false
+        val newTargets = currentTargets + trimmed
+        autoApproveTargets = newTargets.joinToString(TARGET_SEPARATOR)
+        return true
     }
 
     fun removeAutoApproveTarget(target: String): Boolean {
         val currentTargets = getAutoApproveTargetsList()
         val newTargets = currentTargets.filter { it != target.trim() }
         if (newTargets.size != currentTargets.size) {
-            autoApproveTargets = newTargets.joinToString(",")
+            autoApproveTargets = newTargets.joinToString(TARGET_SEPARATOR)
             return true
         }
         return false
@@ -73,7 +95,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         return if (_autoApproveTargets.isBlank()) {
             emptyList()
         } else {
-            _autoApproveTargets.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            _autoApproveTargets.split(TARGET_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }
         }
     }
 
@@ -103,24 +125,24 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         }
     }
 
-    fun addHistoryAccessChangeListener(listener: () -> Unit): ListenerHandle {
+    fun addDataAccessChangeListener(listener: () -> Unit): ListenerHandle {
         val registration = ListenerRegistration(listener)
-        historyAccessChangeListeners.add(registration)
-        return ListenerHandle { removeHistoryAccessChangeListener(registration) }
+        dataAccessChangeListeners.add(registration)
+        return ListenerHandle { removeDataAccessChangeListener(registration) }
     }
 
-    private fun removeHistoryAccessChangeListener(registration: ListenerRegistration) {
-        historyAccessChangeListeners.remove(registration)
+    private fun removeDataAccessChangeListener(registration: ListenerRegistration) {
+        dataAccessChangeListeners.remove(registration)
     }
 
-    private fun notifyHistoryAccessChanged() {
-        cleanupStaleListeners(historyAccessChangeListeners)
-        val listeners = historyAccessChangeListeners.mapNotNull { it.listener.get() }
+    private fun notifyDataAccessChanged() {
+        cleanupStaleListeners(dataAccessChangeListeners)
+        val listeners = dataAccessChangeListeners.mapNotNull { it.listener.get() }
         listeners.forEach { listener ->
             try {
                 listener()
             } catch (e: Exception) {
-                logging.logToError("History access change listener failed: ${e.message}")
+                logging.logToError("Data access change listener failed: ${e.message}")
             }
         }
     }
@@ -132,7 +154,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
 
     fun cleanup() {
         targetsChangeListeners.clear()
-        historyAccessChangeListeners.clear()
+        dataAccessChangeListeners.clear()
     }
 }
 

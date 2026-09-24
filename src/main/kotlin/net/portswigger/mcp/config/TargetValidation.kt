@@ -1,5 +1,7 @@
 package net.portswigger.mcp.config
 
+import java.net.InetAddress
+
 private const val MAX_TARGET_LENGTH = 255
 
 object TargetValidation {
@@ -20,7 +22,7 @@ object TargetValidation {
     fun isValidTarget(target: String): Boolean {
         if (target.isBlank() || target.length > MAX_TARGET_LENGTH) return false
 
-        if (target.contains("\t") || target.contains("\n") || target.contains("\r")) return false
+        if (target.contains(',') || target.any { it.isWhitespace() }) return false
 
         if (target.startsWith("[") && target.contains("]:")) {
             val portPart = target.substringAfterLast(":")
@@ -33,7 +35,12 @@ object TargetValidation {
             val port = parts[1].toIntOrNull()
             if (port == null || port < 1 || port > 65535) return false
         } else if (parts.size > 2) {
-            return true
+            return try {
+                InetAddress.getByName(target)
+                true
+            } catch (e: Exception) {
+                false
+            }
         }
 
         return true

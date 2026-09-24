@@ -22,12 +22,14 @@ import io.mockk.*
 import java.net.InetAddress
 import java.time.ZonedDateTime
 import java.util.Optional
-import io.modelcontextprotocol.kotlin.sdk.CallToolResultBase
-import io.modelcontextprotocol.kotlin.sdk.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import net.portswigger.mcp.KtorServerManager
 import net.portswigger.mcp.ServerState
 import net.portswigger.mcp.TestSseMcpClient
@@ -58,11 +60,12 @@ class ToolsKtTest {
             every { getBoolean("enabled") } returns true
             every { getBoolean("configEditingTooling") } returns true
             every { getBoolean("requireHttpRequestApproval") } returns false
-            every { getBoolean("requireHistoryAccessApproval") } returns false
+            every { getBoolean("requireDataAccessApproval") } returns false
             every { getBoolean("_alwaysAllowHttpHistory") } returns false
             every { getBoolean("_alwaysAllowWebSocketHistory") } returns false
+            every { getBoolean("_alwaysAllowOrganizer") } returns false
             every { getString("host") } returns "127.0.0.1"
-            every { getString("autoApproveTargets") } returns ""
+            every { getString("_autoApproveTargets") } returns ""
             every { getInteger("port") } returns testPort
             every { setBoolean(any(), any()) } returns Unit
             every { setString(any(), any()) } returns Unit
@@ -80,7 +83,7 @@ class ToolsKtTest {
         mockkStatic(HttpRequest::class)
     }
 
-    private fun CallToolResultBase?.expectTextContent(
+    private fun CallToolResult?.expectTextContent(
         expected: String? = null,
     ): String {
         assertNotNull(this, "Tool result cannot be null")
@@ -350,12 +353,53 @@ class ToolsKtTest {
             
             val expectedOrder = listOf(":scheme", ":method", ":path", ":authority")
             for (i in 0 until minOf(expectedOrder.size, pseudoHeaderNames.size)) {
-                assertEquals(expectedOrder[i], pseudoHeaderNames[i], 
+                assertEquals(expectedOrder[i], pseudoHeaderNames[i],
                     "Pseudo headers should follow the order: scheme, method, path, authority")
             }
         }
+
+        @Test
+        fun `create repeater tab http2 should build http2 request`() {
+            val repeater = mockk<burp.api.montoya.repeater.Repeater>(relaxed = true)
+            val httpRequest = mockk<HttpRequest>()
+            val headersSlot = slot<List<HttpHeader>>()
+            val bodySlot = slot<String>()
+
+            every { HttpRequest.http2Request(any(), capture(headersSlot), capture(bodySlot)) } returns httpRequest
+            every { api.repeater() } returns repeater
+
+            val pseudoHeaders = mapOf(
+                "method" to "POST", "path" to "/api/x", "authority" to "example.com", "scheme" to "https"
+            )
+            val headers = mapOf("Content-Type" to "application/json")
+            val requestBody = "{\"k\":\"v\"}"
+
+            runBlocking {
+                val result = client.callTool(
+                    "create_repeater_tab_http2", mapOf(
+                        "tabName" to "h2-tab",
+                        "pseudoHeaders" to Json.encodeToJsonElement(pseudoHeaders),
+                        "headers" to Json.encodeToJsonElement(headers),
+                        "requestBody" to requestBody,
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true
+                    )
+                )
+
+                delay(100)
+                assertNotNull(result)
+            }
+
+            verify(exactly = 1) { repeater.sendToRepeater(httpRequest, "h2-tab") }
+            assertEquals("{\"k\":\"v\"}", bodySlot.captured, "Request body should be passed through unchanged")
+
+            val pseudoHeaderNames = headersSlot.captured.filter { it.name().startsWith(":") }.map { it.name() }
+            assertEquals(listOf(":scheme", ":method", ":path", ":authority"), pseudoHeaderNames)
+            assertTrue(headersSlot.captured.any { it.name() == "content-type" && it.value() == "application/json" })
+        }
     }
-    
+
     @Nested
     inner class UtilityToolsTests {
         @Test
@@ -755,6 +799,34 @@ class ToolsKtTest {
                 
                 delay(100)
                 assertEquals("Reached end of items", result3.expectTextContent())
+            }
+        }
+
+        @Test
+        fun `get proxy history should return valid size limited JSON`() {
+            val proxy = mockk<Proxy>()
+            val historyItem = mockk<ProxyHttpRequestResponse>()
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns listOf(historyItem)
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { historyItem.toSerializableForm() } returns HttpRequestResponse(
+                request = "GET / HTTP/1.1\r\nX-Long: ${"\\\"😀".repeat(2_000)}",
+                response = "HTTP/1.1 200 OK\r\n\r\n${"😀".repeat(3_000)}",
+                notes = "keep me"
+            )
+
+            runBlocking {
+                val text = client.callTool(
+                    "get_proxy_http_history", mapOf("count" to 1, "offset" to 0)
+                ).expectTextContent()
+                val item = Json.parseToJsonElement(text).jsonObject
+
+                assertTrue(text.length <= 5_000)
+                assertEquals(setOf("request", "response", "notes"), item.keys)
+                assertTrue(item.getValue("request").jsonPrimitive.content.endsWith("... (truncated)"))
+                assertTrue(item.getValue("response").jsonPrimitive.content.endsWith("... (truncated)"))
+                assertEquals("keep me", item.getValue("notes").jsonPrimitive.content)
             }
         }
     }

@@ -1,11 +1,11 @@
 [versions]
 # Build System
-kotlin = "2.2.21"
+kotlin = "2.4.0"
 ktor = "3.3.1"
 
 # Runtime Dependencies
 kotlinx-serialization = "1.9.0"
-mcp-sdk = "0.7.4"
+mcp-sdk = "0.15.0"
 burp-montoya = "2025.10"
 
 # Test Dependencies

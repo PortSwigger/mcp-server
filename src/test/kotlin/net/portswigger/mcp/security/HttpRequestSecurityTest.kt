@@ -8,6 +8,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import net.portswigger.mcp.config.McpConfig
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -165,7 +166,7 @@ class HttpRequestSecurityTest {
             "configEditingTooling" to false,
             "requireHttpRequestApproval" to true,
             "host" to "127.0.0.1",
-            "_autoApproveTargets" to "example.com,,  ,test.org",
+            "_autoApproveTargets" to "example.com\n\n  \ntest.org",
             "port" to 9876
         )
 
@@ -191,6 +192,29 @@ class HttpRequestSecurityTest {
             assertTrue(HttpRequestSecurity.checkHttpRequestPermission("example.com", 80, config))
             assertTrue(HttpRequestSecurity.checkHttpRequestPermission("test.org", 80, config))
             assertFalse(HttpRequestSecurity.checkHttpRequestPermission("empty.com", 80, config))
+        }
+    }
+
+    @Test
+    fun `comma-laden hostname from approval dialog must not poison auto-approve list`() {
+        val poisoned = "example.com,127.0.0.1,*.attacker.com,169.254.169.254"
+
+        coEvery {
+            mockApprovalHandler.requestApproval(poisoned, 443, config, any(), any())
+        } coAnswers {
+            config.addAutoApproveTarget(poisoned)
+            true
+        }
+        coEvery { mockApprovalHandler.requestApproval("127.0.0.1", 8123, config, any(), any()) } returns false
+        coEvery { mockApprovalHandler.requestApproval("169.254.169.254", 80, config, any(), any()) } returns false
+        coEvery { mockApprovalHandler.requestApproval("evil.attacker.com", 443, config, any(), any()) } returns false
+
+        runBlocking {
+            assertTrue(HttpRequestSecurity.checkHttpRequestPermission(poisoned, 443, config))
+            assertEquals(emptyList<String>(), config.getAutoApproveTargetsList())
+            assertFalse(HttpRequestSecurity.checkHttpRequestPermission("127.0.0.1", 8123, config))
+            assertFalse(HttpRequestSecurity.checkHttpRequestPermission("169.254.169.254", 80, config))
+            assertFalse(HttpRequestSecurity.checkHttpRequestPermission("evil.attacker.com", 443, config))
         }
     }
 
