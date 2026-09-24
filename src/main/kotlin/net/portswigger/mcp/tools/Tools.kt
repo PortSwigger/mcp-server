@@ -431,7 +431,9 @@ data class SendHttp1Request(
     val content: String,
     override val targetHostname: String,
     override val targetPort: Int,
-    override val usesHttps: Boolean, override val count: Int, override val offset: Int
+    override val usesHttps: Boolean,
+    override val count: Int = DEFAULT_RESPONSE_PAGE_BYTES,
+    override val offset: Int = 0
 ) : HttpServiceParams, Paginated
 
 @Serializable
@@ -441,7 +443,9 @@ data class SendHttp2Request(
     val requestBody: String,
     override val targetHostname: String,
     override val targetPort: Int,
-    override val usesHttps: Boolean, override val count: Int, override val offset: Int
+    override val usesHttps: Boolean,
+    override val count: Int = DEFAULT_RESPONSE_PAGE_BYTES,
+    override val offset: Int = 0
 ) : HttpServiceParams, Paginated
 
 @Serializable

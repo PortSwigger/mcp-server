@@ -199,6 +199,43 @@ class ToolsKtTest {
         }
 
         @Test
+        fun `http1 large response should be paginated by bytes`() {
+            val httpService = mockk<Http>()
+            val httpResponse = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+            val body = "HTTP/1.1 200 OK\r\n\r\n" + "é".repeat(20)
+
+            every { HttpRequest.httpRequest(any(), any<String>()) } returns mockk<HttpRequest>(relaxed = true)
+            every { api.http() } returns httpService
+            every { httpResponse.toString() } returns body
+            every { httpService.sendRequest(any<HttpRequest>()) } returns httpResponse
+
+            fun page(offset: Int) = runBlocking {
+                client.callTool(
+                    "send_http1_request", mapOf(
+                        "content" to "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                        "targetHostname" to "example.com",
+                        "targetPort" to 80,
+                        "usesHttps" to false,
+                        "count" to 26,
+                        "offset" to offset
+                    )
+                ).expectTextContent()
+            }
+
+            val first = page(0)
+            // 19-byte status line + 2-byte chars: a 26-byte page must stop at 25, not mid-character
+            assertTrue(first.contains("Call again with offset=25"), first)
+            assertTrue(first.endsWith("\r\n\r\n" + "é".repeat(3)), first)
+            val second = page(25)
+            assertTrue(second.contains("Call again with offset=51"), second)
+            assertTrue(second.endsWith("\n" + "é".repeat(13)), second)
+            val last = page(51)
+            assertTrue(last.contains("last page"), last)
+            assertTrue(last.endsWith("\n" + "é".repeat(4)), last)
+            assertTrue(page(1000).startsWith("Reached end of response"))
+        }
+
+        @Test
         fun `http1 request should handle no response`() {
             val httpService = mockk<Http>()
             val contentSlot = slot<String>()
