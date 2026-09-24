@@ -13,6 +13,7 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import net.portswigger.mcp.TrafficLog
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.encodeHistoryItem
 import net.portswigger.mcp.schema.toSerializableForm
@@ -108,9 +109,10 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\r", "")          // Actual CR → remove
     .replace("\n", "\r\n")      // All LF → proper CRLF
 
-fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
+fun Server.registerTools(api: MontoyaApi, config: McpConfig, trafficLog: TrafficLog = TrafficLog()) {
     registerHistoryTools(api, config)
     registerSiteMapTools(api, config)
+    registerTrafficLogTools(api, config, trafficLog)
 
     mcpPaginatedBytesTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response. Response is paginated") {
         val allowed = runBlocking {

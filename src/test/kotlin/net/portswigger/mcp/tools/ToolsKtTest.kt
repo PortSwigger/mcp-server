@@ -49,7 +49,8 @@ class ToolsKtTest {
     private val client = TestSseMcpClient()
     private val api = mockk<MontoyaApi>(relaxed = true)
     private lateinit var persistedObject: PersistedObject
-    private val serverManager = KtorServerManager(api)
+    private val trafficLog = net.portswigger.mcp.TrafficLog(capacity = 3)
+    private val serverManager = KtorServerManager(api, trafficLog)
     private val testPort = findAvailablePort()
     private var serverStarted = false
     private val config: McpConfig
@@ -1259,6 +1260,48 @@ class ToolsKtTest {
                     .expectTextContent("Included in scope: https://example.com/")
             }
             verify(exactly = 1) { api.scope().includeInScope("https://example.com/") }
+        }
+    }
+
+    @Nested
+    inner class TrafficLogToolsTests {
+        private fun exchange(path: String, status: Short, body: String) =
+            mockk<burp.api.montoya.http.message.HttpRequestResponse>(relaxed = true).also {
+                val request = mockk<HttpRequest>(relaxed = true)
+                every { request.method() } returns "POST"
+                every { request.url() } returns "https://example.com$path"
+                val response = mockk<burp.api.montoya.http.message.responses.HttpResponse>(relaxed = true)
+                every { response.statusCode() } returns status
+                every { response.body().length() } returns body.length
+                every { response.mimeType() } returns burp.api.montoya.http.message.MimeType.HTML
+                every { response.bodyToString() } returns body
+                every { it.request() } returns request
+                every { it.response() } returns response
+            }
+
+        @Test
+        fun `traffic log keeps the latest entries and filters by tool`() {
+            val time = ZonedDateTime.parse("2026-09-24T10:00:00Z")
+            trafficLog.record(burp.api.montoya.core.ToolType.REPEATER, exchange("/r1", 200, "a"), time)
+            trafficLog.record(burp.api.montoya.core.ToolType.INTRUDER, exchange("/i1", 500, "bb"), time)
+            trafficLog.record(burp.api.montoya.core.ToolType.REPEATER, exchange("/r2", 302, "ccc"), time)
+            trafficLog.record(burp.api.montoya.core.ToolType.INTRUDER, exchange("/i2", 200, "dddd"), time)
+
+            assertEquals(listOf(2, 3, 4), trafficLog.snapshot().map { it.id }, "Oldest entry should be evicted")
+
+            runBlocking {
+                val repeater = client.callTool("get_traffic_log_summary", mapOf("tool" to "repeater")).expectTextContent()
+                assertEquals(
+                    "=== Items 1–1 of 1 ===\n#3 2026-09-24T10:00 repeater POST https://example.com/r2 -> 302 3B html",
+                    repeater
+                )
+
+                client.callTool("get_traffic_log_item", mapOf("id" to 4, "part" to "response_body"))
+                    .expectTextContent().let { assertTrue(it.startsWith("# id=4 ") && it.endsWith("dddd"), it) }
+
+                client.callTool("get_traffic_log_item", mapOf("id" to 1)).expectTextContent()
+                    .let { assertTrue(it.startsWith("No traffic log entry with id 1"), it) }
+            }
         }
     }
 }
