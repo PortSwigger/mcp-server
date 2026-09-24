@@ -30,7 +30,8 @@ class ExtensionBase : BurpExtension {
             configUi.getConfig()
 
             if (enabled) {
-                serverManager.start(config) { state ->
+                val activeConfig = configUi.getConfig()
+                serverManager.start(activeConfig) { state ->
                     configUi.updateServerState(state)
                 }
             } else {
@@ -49,7 +50,8 @@ class ExtensionBase : BurpExtension {
         }
 
         if (config.enabled) {
-            serverManager.start(config) { state ->
+            val activeConfig = configUi.getConfig()
+            serverManager.start(activeConfig) { state ->
                 configUi.updateServerState(state)
             }
         }

@@ -34,6 +34,15 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
                 suppressToggleEvents = false
                 return@createToggleSwitch
             }
+
+            ConfigValidation.validateAllowedHosts(allowedHostsField.text)?.let { error ->
+                validationErrorLabel.text = error
+                validationErrorLabel.isVisible = true
+                suppressToggleEvents = true
+                enabledToggle.setState(false, animate = true)
+                suppressToggleEvents = false
+                return@createToggleSwitch
+            }
         }
 
         validationErrorLabel.isVisible = false
@@ -43,6 +52,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private val validationErrorLabel = WarningLabel()
     private val hostField = JTextField(15)
     private val portField = JTextField(5)
+    private val allowedHostsField = JTextField(30)
     private val reinstallNotice = WarningLabel("Make sure to reinstall after changing server settings")
 
     private lateinit var serverConfigurationPanel: ServerConfigurationPanel
@@ -63,6 +73,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         enabledToggle.setState(config.enabled, animate = false)
         hostField.text = config.host
         portField.text = config.port.toString()
+        allowedHostsField.text = config.allowedHosts
 
         initializeComponents()
         buildUi()
@@ -74,7 +85,10 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
         )
 
         advancedOptionsPanel = AdvancedOptionsPanel(
-            hostField = hostField, portField = portField, reinstallNotice = reinstallNotice
+            hostField = hostField,
+            portField = portField,
+            allowedHostsField = allowedHostsField,
+            reinstallNotice = reinstallNotice
         )
 
         autoApproveTargetsPanel = AutoApproveTargetsPanel(config = config)
@@ -107,6 +121,7 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     fun getConfig(): McpConfig {
         config.host = hostField.text
         portField.text.toIntOrNull()?.let { config.port = it }
+        config.allowedHosts = allowedHostsField.text
         return config
     }
 

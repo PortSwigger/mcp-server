@@ -20,4 +20,8 @@ object ConfigValidation {
 
         return null
     }
+
+    fun validateAllowedHosts(allowedHosts: String): String? {
+        return AllowedHostValidation.validateAllowedHosts(allowedHosts)
+    }
 }

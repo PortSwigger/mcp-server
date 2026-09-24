@@ -15,6 +15,16 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     var configEditingTooling by storage.boolean(false)
     var host by storage.string("127.0.0.1")
     var port by storage.int(9876)
+    private var _allowedHosts by storage.string("")
+
+    var allowedHosts: String
+        get() = _allowedHosts
+        set(value) {
+            val sanitized = AllowedHostValidation.sanitizeAllowedHosts(value)
+            if (_allowedHosts != sanitized) {
+                _allowedHosts = sanitized
+            }
+        }
     var requireHttpRequestApproval by storage.boolean(true)
     var requireDataAccessApproval by storage.boolean(true)
 
@@ -69,6 +79,15 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         if (valid.size != current.size) {
             _autoApproveTargets = valid.joinToString(TARGET_SEPARATOR)
         }
+
+        val sanitizedAllowedHosts = AllowedHostValidation.sanitizeAllowedHosts(_allowedHosts)
+        if (sanitizedAllowedHosts != _allowedHosts) {
+            _allowedHosts = sanitizedAllowedHosts
+        }
+    }
+
+    fun getAllowedHostsList(): List<String> {
+        return AllowedHostValidation.parseCommaSeparated(_allowedHosts)
     }
 
     fun addAutoApproveTarget(target: String): Boolean {
