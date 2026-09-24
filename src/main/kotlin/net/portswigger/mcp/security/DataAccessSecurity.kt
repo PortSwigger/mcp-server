@@ -28,6 +28,9 @@ class SwingDataAccessApprovalHandler : DataAccessApprovalHandler {
 
                 val message = buildString {
                     appendLine("An MCP client is requesting access to your Burp Suite $accessTypeName.")
+                    if (accessType == DataAccessType.HTTP_HISTORY) {
+                        appendLine("This covers proxy history, site map, the traffic log and the cookie jar.")
+                    }
                     appendLine()
                     appendLine("This may include sensitive data from previous web sessions.")
                     appendLine("Choose how you would like to respond:")

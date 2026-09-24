@@ -24,7 +24,7 @@ import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
 import javax.swing.JTextArea
 
-private suspend fun checkDataAccessOrDeny(
+internal suspend fun checkDataAccessOrDeny(
     accessType: DataAccessType, config: McpConfig, api: MontoyaApi, logMessage: String
 ): Boolean {
     val allowed = DataAccessSecurity.checkDataAccessPermission(accessType, config)
@@ -109,6 +109,8 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\n", "\r\n")      // All LF → proper CRLF
 
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
+    registerHistoryTools(api, config)
+    registerSiteMapTools(api, config)
 
     mcpPaginatedBytesTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response. Response is paginated") {
         val allowed = runBlocking {
