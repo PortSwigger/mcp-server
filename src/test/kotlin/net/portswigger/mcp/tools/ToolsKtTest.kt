@@ -1304,4 +1304,90 @@ class ToolsKtTest {
             }
         }
     }
+
+    @Nested
+    inner class SendOptionsTests {
+        private fun responseWith(text: String, status: Short = 200) =
+            mockk<burp.api.montoya.http.message.HttpRequestResponse>(relaxed = true).also {
+                every { it.toString() } returns text
+                every { it.response().toString() } returns text
+                every { it.response().statusCode() } returns status
+                every { it.response().body().length() } returns 2
+                every { it.timingData() } returns Optional.empty()
+            }
+
+        @Test
+        fun `http2 request body is optional`() {
+            val httpService = mockk<Http>()
+            every { api.http() } returns httpService
+            every { HttpRequest.http2Request(any(), any<List<HttpHeader>>(), any<String>()) } returns mockk(relaxed = true)
+            every { httpService.sendRequest(any(), HttpMode.HTTP_2) } returns responseWith("HTTP/2 200")
+
+            runBlocking {
+                client.callTool(
+                    "send_http2_request", mapOf(
+                        "pseudoHeaders" to mapOf("method" to "GET", "path" to "/"),
+                        "headers" to emptyMap<String, String>(),
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true
+                    )
+                ).expectTextContent("HTTP/2 200")
+            }
+        }
+
+        @Test
+        fun `http1 options are applied and exchange added to site map`() {
+            val httpService = mockk<Http>()
+            val options = mockk<burp.api.montoya.http.RequestOptions>()
+            val result = responseWith("HTTP/1.1 200 OK")
+            mockkStatic(burp.api.montoya.http.RequestOptions::class)
+            every { burp.api.montoya.http.RequestOptions.requestOptions() } returns options
+            every { options.withResponseTimeout(any()) } returns options
+            every { options.withRedirectionMode(any()) } returns options
+            every { api.http() } returns httpService
+            every { HttpRequest.httpRequest(any(), any<String>()) } returns mockk(relaxed = true)
+            every { httpService.sendRequest(any(), options) } returns result
+
+            runBlocking {
+                client.callTool(
+                    "send_http1_request", mapOf(
+                        "content" to "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true,
+                        "responseTimeoutMs" to 120000,
+                        "redirectionMode" to "never",
+                        "addToSiteMap" to true
+                    )
+                ).expectTextContent("HTTP/1.1 200 OK")
+            }
+
+            verify { options.withResponseTimeout(120_000L) }
+            verify { options.withRedirectionMode(burp.api.montoya.http.RedirectionMode.NEVER) }
+            verify { api.siteMap().add(result) }
+        }
+
+        @Test
+        fun `parallel requests return a line per response`() {
+            val httpService = mockk<Http>()
+            every { api.http() } returns httpService
+            every { HttpRequest.httpRequest(any(), any<String>()) } returns mockk(relaxed = true)
+            every { httpService.sendRequests(any<List<HttpRequest>>()) } returns
+                    listOf(responseWith("HTTP/1.1 200 OK"), responseWith("HTTP/1.1 409 Conflict", 409))
+
+            runBlocking {
+                val text = client.callTool(
+                    "send_http_requests_parallel", mapOf(
+                        "contents" to listOf("POST /redeem HTTP/1.1\r\nHost: example.com\r\n\r\n", "POST /redeem HTTP/1.1\r\nHost: example.com\r\n\r\n"),
+                        "targetHostname" to "example.com",
+                        "targetPort" to 443,
+                        "usesHttps" to true,
+                        "maxResponseBytes" to 8
+                    )
+                ).expectTextContent()
+                assertEquals("[0] 200 2B ?ms\nHTTP/1.1\n\n[1] 409 2B ?ms\nHTTP/1.1", text)
+            }
+        }
+    }
 }

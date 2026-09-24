@@ -113,8 +113,13 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig, trafficLog: Traffic
     registerHistoryTools(api, config)
     registerSiteMapTools(api, config)
     registerTrafficLogTools(api, config, trafficLog)
+    registerParallelSendTools(api, config)
 
-    mcpPaginatedBytesTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response. Response is paginated") {
+    mcpPaginatedBytesTool<SendHttp1Request>(
+        "Issues an HTTP/1.1 request and returns the response. Response is paginated by bytes via offset/count. " +
+                "For binary bodies put only the request line and headers in content and pass the body as bodyBase64 " +
+                "(Content-Length is updated). $SEND_OPTIONS_DESCRIPTION"
+    ) {
         val allowed = runBlocking {
             HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
         }
@@ -127,13 +132,17 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig, trafficLog: Traffic
 
         val fixedContent = normalizeHttpContent(content)
 
-        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
-        val response = api.http().sendRequest(request)
+        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent).withBase64Body(bodyBase64)
+        val response = sendWithOptions(api, request, null, this)
 
         response?.toString() ?: "<no response>"
     }
 
-    mcpPaginatedBytesTool<SendHttp2Request>("Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter. Response is paginated") {
+    mcpPaginatedBytesTool<SendHttp2Request>(
+        "Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter. " +
+                "requestBody may be omitted; use requestBodyBase64 for binary bodies. " +
+                "Response is paginated by bytes via offset/count. $SEND_OPTIONS_DESCRIPTION"
+    ) {
         val http2RequestDisplay = buildString {
             pseudoHeaders.forEach { (key, value) ->
                 val headerName = if (key.startsWith(":")) key else ":$key"
@@ -160,8 +169,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig, trafficLog: Traffic
 
         val headerList = buildHttp2HeaderList(pseudoHeaders, headers)
 
-        val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody)
-        val response = api.http().sendRequest(request, HttpMode.HTTP_2)
+        val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody).withBase64Body(requestBodyBase64)
+        val response = sendWithOptions(api, request, HttpMode.HTTP_2, this)
 
         response?.toString() ?: "<no response>"
     }
@@ -436,21 +445,31 @@ data class SendHttp1Request(
     override val targetHostname: String,
     override val targetPort: Int,
     override val usesHttps: Boolean,
+    val bodyBase64: String? = null,
+    override val responseTimeoutMs: Int? = null,
+    override val redirectionMode: String? = null,
+    override val serverNameIndicator: String? = null,
+    override val addToSiteMap: Boolean = false,
     override val count: Int = DEFAULT_RESPONSE_PAGE_BYTES,
     override val offset: Int = 0
-) : HttpServiceParams, Paginated
+) : HttpServiceParams, SendOptionsParams, Paginated
 
 @Serializable
 data class SendHttp2Request(
     val pseudoHeaders: Map<String, String>,
     val headers: Map<String, String>,
-    val requestBody: String,
+    val requestBody: String = "",
     override val targetHostname: String,
     override val targetPort: Int,
     override val usesHttps: Boolean,
+    val requestBodyBase64: String? = null,
+    override val responseTimeoutMs: Int? = null,
+    override val redirectionMode: String? = null,
+    override val serverNameIndicator: String? = null,
+    override val addToSiteMap: Boolean = false,
     override val count: Int = DEFAULT_RESPONSE_PAGE_BYTES,
     override val offset: Int = 0
-) : HttpServiceParams, Paginated
+) : HttpServiceParams, SendOptionsParams, Paginated
 
 @Serializable
 data class CreateRepeaterTab(
