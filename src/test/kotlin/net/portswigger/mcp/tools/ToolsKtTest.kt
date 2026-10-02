@@ -829,6 +829,42 @@ class ToolsKtTest {
                 assertEquals("keep me", item.getValue("notes").jsonPrimitive.content)
             }
         }
+
+        @Test
+        fun `recorded HTTP tools read the complete captured response`() {
+            val proxy = mockk<Proxy>()
+            val historyItem = mockk<ProxyHttpRequestResponse>()
+            val response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n" + "x".repeat(7_000)
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns listOf(historyItem)
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+            every { historyItem.toSerializableForm() } returns HttpRequestResponse(
+                "GET /large HTTP/1.1\r\nHost: example.test\r\n\r\n", response, null
+            )
+
+            runBlocking {
+                val headers = Json.decodeFromString<RecordedHttpHeaders>(
+                    client.callTool(
+                        "get_recorded_http_headers", mapOf("source" to "proxy", "index" to 0)
+                    ).expectTextContent()
+                )
+                assertEquals("HTTP/1.1 200 OK\r\nContent-Type: text/plain", headers.responseHeaders)
+
+                val content = StringBuilder()
+                var offset = 0
+                do {
+                    val chunk = Json.decodeFromString<RecordedHttpChunk>(
+                        client.callTool(
+                            "get_recorded_http_message_chunk",
+                            mapOf("source" to "proxy", "index" to 0, "part" to "response", "offset" to offset, "length" to 2_000)
+                        ).expectTextContent()
+                    )
+                    content.append(chunk.content)
+                    offset = chunk.nextOffset
+                } while (offset < response.length)
+                assertEquals(response, content.toString())
+            }
+        }
     }
     
     @Nested

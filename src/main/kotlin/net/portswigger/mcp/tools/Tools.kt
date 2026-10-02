@@ -36,6 +36,25 @@ private suspend fun checkDataAccessOrDeny(
     return true
 }
 
+private fun recordedAccessType(source: String): DataAccessType = when (source) {
+    "proxy" -> DataAccessType.HTTP_HISTORY
+    "organizer" -> DataAccessType.ORGANIZER
+    else -> throw IllegalArgumentException("source must be 'proxy' or 'organizer'")
+}
+
+private fun recordedHttpMessage(api: MontoyaApi, source: String, index: Int): RecordedHttpMessage {
+    require(index >= 0) { "index must be non-negative" }
+    return when (source) {
+        "proxy" -> api.proxy().history().getOrNull(index)?.toSerializableForm()?.let {
+            RecordedHttpMessage(it.request ?: "<no request>", it.response ?: "<no response>")
+        }
+        "organizer" -> api.organizer().items().getOrNull(index)?.toSerializableForm()?.let {
+            RecordedHttpMessage(it.request ?: "<no request>", it.response ?: "<no response>")
+        }
+        else -> throw IllegalArgumentException("source must be 'proxy' or 'organizer'")
+    } ?: throw IllegalArgumentException("No $source item at index $index")
+}
+
 private fun buildHttp2HeaderList(
     pseudoHeaders: Map<String, String>, headers: Map<String, String>
 ): List<HttpHeader> {
@@ -321,6 +340,27 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { encodeHistoryItem(it.toSerializableForm()) }
     }
 
+    mcpTool<GetRecordedHttpHeaders>(
+        "Returns request and response headers for one recorded Proxy HTTP history or Organizer item. " +
+            "Use the item index from the unfiltered history; long header blocks are previewed and can be read in full with get_recorded_http_message_chunk."
+    ) {
+        val accessType = recordedAccessType(source)
+        val allowed = runBlocking { checkDataAccessOrDeny(accessType, config, api, source) }
+        if (!allowed) return@mcpTool "$source access denied by Burp Suite"
+        encodeRecordedHttpHeaders(source, index, recordedHttpMessage(api, source, index))
+    }
+
+    mcpTool<GetRecordedHttpMessageChunk>(
+        "Reads a bounded chunk of a recorded HTTP request or response without sending traffic. " +
+            "source is proxy or organizer; part is request or response. offset and length count Unicode characters. " +
+            "Use nextOffset to continue until it equals totalLength."
+    ) {
+        val accessType = recordedAccessType(source)
+        val allowed = runBlocking { checkDataAccessOrDeny(accessType, config, api, source) }
+        if (!allowed) return@mcpTool "$source access denied by Burp Suite"
+        encodeRecordedHttpChunk(source, index, part, offset, length, recordedHttpMessage(api, source, index))
+    }
+
     mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
@@ -511,6 +551,14 @@ data class GetProxyHttpHistory(override val count: Int, override val offset: Int
 
 @Serializable
 data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetRecordedHttpHeaders(val source: String, val index: Int)
+
+@Serializable
+data class GetRecordedHttpMessageChunk(
+    val source: String, val index: Int, val part: String, val offset: Int, val length: Int
+)
 
 @Serializable
 data class GetOrganizerItems(override val count: Int, override val offset: Int) : Paginated

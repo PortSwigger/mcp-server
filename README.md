@@ -61,6 +61,16 @@ Upon successful loading, the MCP Server Extension will be active within Burp Sui
 
 ## Configuration
 
+### Inspecting long recorded HTTP messages
+
+The existing history tools limit each item to 5,000 characters. To inspect a captured message in full:
+
+1. Use `get_proxy_http_history` or `get_organizer_items` to find the item. Its unfiltered zero-based position is the `index` used below.
+2. Call `get_recorded_http_headers` with `source` (`proxy` or `organizer`) and `index` to inspect the request and response headers. Very long headers are previewed and marked as truncated.
+3. Call `get_recorded_http_message_chunk` with the same `source` and `index`, `part` (`request` or `response`), `offset: 0`, and `length: 2000`. Repeat with the returned `nextOffset` until it equals `totalLength`. Offsets and lengths count Unicode characters. Each result is valid JSON and stays within 5,000 characters.
+
+These tools read captured items without sending HTTP requests. They use the existing Burp permission check for Proxy HTTP history or Organizer access. If the history order changes, find the item again before using its index.
+
 ### Configuring the Extension
 Configuration for the extension is done through the Burp Suite UI in the `MCP` tab.
 - **Toggle the MCP Server**: The `Enabled` checkbox controls whether the MCP server is active.
