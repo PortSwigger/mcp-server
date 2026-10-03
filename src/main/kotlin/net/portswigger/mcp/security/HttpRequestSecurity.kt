@@ -1,11 +1,13 @@
 package net.portswigger.mcp.security
 
 import burp.api.montoya.MontoyaApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import net.portswigger.mcp.Swing
 import net.portswigger.mcp.config.Dialogs
 import net.portswigger.mcp.config.McpConfig
-import javax.swing.SwingUtilities
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 interface UserApprovalHandler {
     suspend fun requestApproval(
@@ -16,46 +18,28 @@ interface UserApprovalHandler {
 class SwingUserApprovalHandler : UserApprovalHandler {
     override suspend fun requestApproval(
         hostname: String, port: Int, config: McpConfig, requestContent: String?, api: MontoyaApi?
-    ): Boolean {
-        return suspendCoroutine { continuation ->
-            SwingUtilities.invokeLater {
-                val message = buildString {
-                    appendLine("An MCP client is requesting to send an HTTP request to:")
-                    appendLine()
-                    appendLine("Target: $hostname:$port")
-                    appendLine()
-                }
-
-                val options = arrayOf(
-                    "Allow Once", "Always Allow Host", "Always Allow Host:Port", "Deny"
-                )
-
-                val burpFrame = findBurpFrame()
-
-                val result = Dialogs.showOptionDialog(
-                    burpFrame, message, options, requestContent, api
-                )
-
-                when (result) {
-                    0 -> {
-                        continuation.resume(true)
-                    }
-
-                    1 -> {
-                        config.addAutoApproveTarget(hostname)
-                        continuation.resume(true)
-                    }
-
-                    2 -> {
-                        config.addAutoApproveTarget("$hostname:$port")
-                        continuation.resume(true)
-                    }
-
-                    else -> {
-                        continuation.resume(false)
-                    }
-                }
+    ): Boolean = withContext(Dispatchers.Swing) {
+        val message = buildString {
+            appendLine("An MCP client is requesting to send an HTTP request to:")
+            appendLine()
+            appendLine("Target: $hostname:$port")
+            appendLine()
+        }
+        val options = arrayOf("Allow Once", "Always Allow Host", "Always Allow Host:Port", "Deny")
+        val result = Dialogs.awaitOptionDialog(findBurpFrame(), message, options, requestContent, api)
+        currentCoroutineContext().ensureActive()
+        // Remembered settings commit synchronously; cancellation does not roll back a started write.
+        when (result) {
+            0 -> true
+            1 -> {
+                config.addAutoApproveTarget(hostname)
+                true
             }
+            2 -> {
+                config.addAutoApproveTarget("$hostname:$port")
+                true
+            }
+            else -> false
         }
     }
 }
@@ -115,6 +99,8 @@ object HttpRequestSecurity {
             return true
         }
 
-        return approvalHandler.requestApproval(hostname, port, config, requestContent, api)
+        val allowed = approvalHandler.requestApproval(hostname, port, config, requestContent, api)
+        currentCoroutineContext().ensureActive()
+        return allowed
     }
 }
