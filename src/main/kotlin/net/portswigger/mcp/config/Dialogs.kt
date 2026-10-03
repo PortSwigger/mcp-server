@@ -3,11 +3,14 @@ package net.portswigger.mcp.config
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.message.requests.HttpRequest
 import burp.api.montoya.ui.editor.EditorOptions
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.awt.*
 import java.awt.event.ActionEvent
 import java.awt.event.KeyEvent
 import javax.swing.*
 import javax.swing.border.EmptyBorder
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 object Dialogs {
 
@@ -282,12 +285,41 @@ object Dialogs {
         return result
     }
 
-    fun showOptionDialog(
+    suspend fun awaitOptionDialog(
         parent: Component?,
         message: String,
         options: Array<String>,
         requestContent: String? = null,
         api: MontoyaApi? = null
+    ): Int = suspendCancellableCoroutine { continuation ->
+        // This reference is read and written only on the EDT.
+        var pendingDialog: JDialog? = null
+        continuation.invokeOnCancellation {
+            SwingUtilities.invokeLater { pendingDialog?.dispose() }
+        }
+        SwingUtilities.invokeLater {
+            if (!continuation.isActive) return@invokeLater
+            try {
+                val result = showOptionDialog(parent, message, options, requestContent, api) { dialog ->
+                    pendingDialog = dialog
+                    continuation.isActive
+                }
+                if (continuation.isActive) continuation.resume(result)
+            } catch (failure: Exception) {
+                if (continuation.isActive) continuation.resumeWithException(failure)
+            } finally {
+                pendingDialog = null
+            }
+        }
+    }
+
+    fun showOptionDialog(
+        parent: Component?,
+        message: String,
+        options: Array<String>,
+        requestContent: String? = null,
+        api: MontoyaApi? = null,
+        beforeShow: (JDialog) -> Boolean = { true }
     ): Int {
         val dialog = createDialog(parent)
         var result = -1
@@ -467,6 +499,10 @@ object Dialogs {
             )
         }
 
+        if (!beforeShow(dialog)) {
+            dialog.dispose()
+            return -1
+        }
         dialog.isVisible = true
 
         SwingUtilities.invokeLater {
