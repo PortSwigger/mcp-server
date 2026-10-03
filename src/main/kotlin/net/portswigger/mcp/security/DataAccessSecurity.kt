@@ -1,5 +1,10 @@
 package net.portswigger.mcp.security
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import net.portswigger.mcp.Swing
 import net.portswigger.mcp.config.Dialogs
 import net.portswigger.mcp.config.McpConfig
 
@@ -14,33 +19,24 @@ interface DataAccessApprovalHandler {
 class SwingDataAccessApprovalHandler : DataAccessApprovalHandler {
     override suspend fun requestDataAccess(
         accessType: DataAccessType, config: McpConfig
-    ): Boolean {
+    ): Boolean = withContext(Dispatchers.Swing) {
         val accessTypeName = when (accessType) {
             DataAccessType.HTTP_HISTORY -> "HTTP history"
             DataAccessType.WEBSOCKET_HISTORY -> "WebSocket history"
             DataAccessType.ORGANIZER -> "Organizer items"
         }
-
         val message = buildString {
             appendLine("An MCP client is requesting access to your Burp Suite $accessTypeName.")
             appendLine()
             appendLine("This may include sensitive data from previous web sessions.")
             appendLine("Choose how you would like to respond:")
         }
-
-        val options = arrayOf(
-            "Allow Once", "Always Allow $accessTypeName", "Deny"
-        )
-
-        val burpFrame = findBurpFrame()
-
-        val result = Dialogs.requestOption(
-            burpFrame, message, options
-        )
-
-        return when (result) {
+        val options = arrayOf("Allow Once", "Always Allow $accessTypeName", "Deny")
+        val result = Dialogs.requestOption(findBurpFrame(), message, options)
+        currentCoroutineContext().ensureActive()
+        // Remembered settings commit synchronously; cancellation does not roll back a started write.
+        when (result) {
             0 -> true
-
             1 -> {
                 when (accessType) {
                     DataAccessType.HTTP_HISTORY -> config.alwaysAllowHttpHistory = true
@@ -49,7 +45,6 @@ class SwingDataAccessApprovalHandler : DataAccessApprovalHandler {
                 }
                 true
             }
-
             else -> false
         }
     }
@@ -76,6 +71,8 @@ object DataAccessSecurity {
             return true
         }
 
-        return approvalHandler.requestDataAccess(accessType, config)
+        val allowed = approvalHandler.requestDataAccess(accessType, config)
+        currentCoroutineContext().ensureActive()
+        return allowed
     }
 }

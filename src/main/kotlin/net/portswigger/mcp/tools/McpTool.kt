@@ -18,6 +18,7 @@ import kotlin.experimental.ExperimentalTypeInference
 @OptIn(InternalSerializationApi::class)
 inline fun <reified I : Any> Server.mcpTool(
     description: String,
+    execution: ToolExecution = ToolExecution(),
     crossinline execute: suspend I.() -> List<ContentBlock>
 ) {
     val toolName = I::class.simpleName?.toLowerSnakeCase() ?: error("Couldn't find name for ${I::class}")
@@ -27,12 +28,14 @@ inline fun <reified I : Any> Server.mcpTool(
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, request ->
         try {
             CallToolResult(
-                content = execute(
-                    Json.decodeFromJsonElement(
-                        serializer,
-                        request.params.arguments ?: JsonObject(emptyMap())
+                content = execution.run {
+                    execute(
+                        Json.decodeFromJsonElement(
+                            serializer,
+                            request.params.arguments ?: JsonObject(emptyMap())
+                        )
                     )
-                ),
+                },
                 isError = false
             )
         } catch (e: CancellationException) {
@@ -53,18 +56,20 @@ inline fun <reified I : Any> Server.mcpTool(
 @JvmName("mcpToolString")
 inline fun <reified I : Any> Server.mcpTool(
     description: String,
+    execution: ToolExecution = ToolExecution(),
     crossinline execute: suspend I.() -> String
 ) {
-    mcpTool<I>(description, execute = {
+    mcpTool<I>(description, execution, execute = {
         listOf(TextContent(execute(this)))
     })
 }
 
 inline fun <reified I : Any> Server.mcpUnitTool(
     description: String,
+    execution: ToolExecution = ToolExecution(),
     crossinline execute: suspend I.() -> Unit
 ) {
-    mcpTool<I>(description, execute = {
+    mcpTool<I>(description, execution, execute = {
         execute(this)
 
         listOf(TextContent("Executed tool"))
@@ -73,10 +78,11 @@ inline fun <reified I : Any> Server.mcpUnitTool(
 
 inline fun <reified I : Paginated, J : Any> Server.mcpPaginatedTool(
     description: String,
+    execution: ToolExecution = ToolExecution(),
     noinline mapper: (J) -> CharSequence = { it.toString() },
     crossinline execute: suspend I.() -> List<J>
 ) {
-    mcpTool<I>(description, execute = {
+    mcpTool<I>(description, execution, execute = {
 
         val items = execute(this)
 
@@ -97,9 +103,10 @@ inline fun <reified I : Paginated, J : Any> Server.mcpPaginatedTool(
 
 inline fun <reified I : Paginated> Server.mcpPaginatedTool(
     description: String,
+    execution: ToolExecution = ToolExecution(),
     crossinline execute: suspend I.() -> Sequence<String>
 ) {
-    mcpTool<I>(description, execute = {
+    mcpTool<I>(description, execution, execute = {
         val seq = execute(this)
         val paginated = seq.drop(offset).take(count).toList()
 
@@ -117,10 +124,11 @@ inline fun <reified I : Paginated> Server.mcpPaginatedTool(
 inline fun Server.mcpTool(
     name: String,
     description: String,
+    execution: ToolExecution = ToolExecution(),
     crossinline execute: suspend () -> List<ContentBlock>
 ) {
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
-        CallToolResult(content = execute(), isError = false)
+        CallToolResult(content = execution.run { execute() }, isError = false)
     }
     addTool(name = name, description = description, inputSchema = ToolSchema(), handler = handler)
 }
@@ -128,10 +136,11 @@ inline fun Server.mcpTool(
 inline fun Server.mcpTool(
     name: String,
     description: String,
+    execution: ToolExecution = ToolExecution(),
     crossinline execute: suspend () -> String
 ) {
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
-        CallToolResult(content = listOf(TextContent(execute())), isError = false)
+        CallToolResult(content = execution.run { listOf(TextContent(execute())) }, isError = false)
     }
     addTool(name = name, description = description, inputSchema = ToolSchema(), handler = handler)
 }

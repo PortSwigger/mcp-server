@@ -15,8 +15,12 @@ concurrency:
 
 jobs:
   build:
-    name: Test & Build
-    runs-on: ubuntu-latest
+    name: Test & Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
     steps:
@@ -32,20 +36,23 @@ jobs:
           validate-wrappers: true
 
       - name: Run tests
-        run: ./gradlew test
+        shell: bash
+        run: ./gradlew test --console=plain
 
       - name: Build extension JAR
-        run: ./gradlew embedProxyJar
+        shell: bash
+        run: ./gradlew embedProxyJar --console=plain
 
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-reports
+          name: test-reports-${{ matrix.os }}
           path: build/reports/tests/
           retention-days: 7
 
       - name: Upload extension JAR
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: burp-mcp-extension

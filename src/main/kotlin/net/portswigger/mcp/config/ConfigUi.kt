@@ -3,6 +3,8 @@ package net.portswigger.mcp.config
 import io.ktor.util.network.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import net.portswigger.mcp.ServerState
 import net.portswigger.mcp.Swing
@@ -16,6 +18,9 @@ import javax.swing.Box.*
 import javax.swing.JOptionPane.ERROR_MESSAGE
 
 class ConfigUi(private val config: McpConfig, private val providers: List<Provider>) {
+
+    private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Swing)
+    @Volatile private var disposed = false
 
     private val panel = JPanel(BorderLayout())
     val component: JComponent get() = panel
@@ -54,7 +59,8 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     private var suppressToggleEvents: Boolean = false
 
     private val dataAccessRefreshListener: () -> Unit = {
-        SwingUtilities.invokeLater {
+        uiScope.launch {
+            if (disposed) return@launch
             serverConfigurationPanel.updateDataAccessCheckboxes()
         }
     }
@@ -92,6 +98,10 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     }
 
     fun cleanup() {
+        if (disposed) return
+        disposed = true
+        uiScope.cancel()
+
         listenerHandles.forEach { it.remove() }
         listenerHandles.clear()
 
@@ -111,7 +121,8 @@ class ConfigUi(private val config: McpConfig, private val providers: List<Provid
     }
 
     fun updateServerState(state: ServerState) {
-        CoroutineScope(Dispatchers.Swing).launch {
+        uiScope.launch {
+            if (disposed) return@launch
             suppressToggleEvents = true
 
             val enableAdvancedOptions = state is ServerState.Stopped || state is ServerState.Failed

@@ -5,22 +5,27 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import net.portswigger.mcp.config.McpConfig
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import java.net.ServerSocket
+import java.util.concurrent.TimeUnit
 
+@Timeout(30, unit = TimeUnit.SECONDS)
 class McpServerIntegrationTest {
     private val client = TestSseMcpClient()
     private val api = mockk<MontoyaApi>(relaxed = true)
     private val serverManager = KtorServerManager(api)
-    private val testPort = findAvailablePort()
+    private val testPort = ServerSocket(0).use { it.localPort }
     private val persistedObject = mockk<PersistedObject>()
-    private var serverStarted = false
 
     init {
         every { persistedObject.getBoolean(any()) } returns true
@@ -31,65 +36,42 @@ class McpServerIntegrationTest {
         every { persistedObject.setInteger(any(), any()) } returns Unit
     }
 
-    private val mockLogging = mockk<Logging>().apply {
-        every { logToError(any<String>()) } returns Unit
-        every { logToOutput(any<String>()) } returns Unit
-    }
-
+    private val mockLogging = mockk<Logging>(relaxed = true)
     private val config = McpConfig(persistedObject, mockLogging)
 
     @BeforeEach
-    fun setup() {
+    fun setup(): Unit = runBlocking {
+        val started = CompletableDeferred<Unit>()
         serverManager.start(config) { state ->
-            if (state is ServerState.Running) {
-                serverStarted = true
+            when (state) {
+                ServerState.Running -> started.complete(Unit)
+                is ServerState.Failed -> started.completeExceptionally(state.exception)
+                else -> Unit
             }
         }
-        
-        runBlocking {
-            var attempts = 0
-            while (!serverStarted && attempts < 10) {
-                delay(100)
-                attempts++
-            }
-            
-            if (!serverStarted) {
-                throw IllegalStateException("Server failed to start after timeout")
-            }
-        }
-    }
-
-    private fun findAvailablePort(): Int {
-        return ServerSocket(0).use { it.localPort }
+        withTimeout(10_000) { started.await() }
     }
 
     @AfterEach
-    fun tearDown() {
-        runBlocking {
-            if (client.isConnected()) {
-                client.close()
-            }
+    fun tearDown(): Unit = runBlocking {
+        try {
+            client.close()
+        } finally {
+            serverManager.shutdown()
+            config.cleanup()
         }
-        serverManager.stop {}
     }
 
     @Test
-    fun `server should accept connections and list tools`() = runBlocking {
-        try {
-            client.connectToServer("http://127.0.0.1:${testPort}")
-            assertTrue(client.isConnected(), "Client should be connected to server")
-            
-            val tools = client.listTools()
-            assertFalse(tools.isEmpty(), "Server should have registered tools")
-            
-            val toolNames = tools.map { it.name }
-            assertTrue(toolNames.contains("output_project_options"), "Server should have output_project_options tool")
-            assertTrue(toolNames.contains("output_user_options"), "Server should have output_user_options tool")
-            
-            val pingResult = client.ping()
-            assertNotNull(pingResult, "Ping should return a result")
-        } catch (e: Exception) {
-            fail("Connection failed: ${e.message}")
-        }
+    fun `server should accept connections and list tools`(): Unit = runBlocking {
+        client.connectToServer("http://127.0.0.1:$testPort")
+        assertTrue(client.isConnected(), "Client should be connected to server")
+
+        val tools = client.listTools()
+        assertFalse(tools.isEmpty(), "Server should have registered tools")
+        val toolNames = tools.map { it.name }
+        assertTrue(toolNames.contains("output_project_options"))
+        assertTrue(toolNames.contains("output_user_options"))
+        assertNotNull(client.ping(), "Ping should return a result")
     }
 }

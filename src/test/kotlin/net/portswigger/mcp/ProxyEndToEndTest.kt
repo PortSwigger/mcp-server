@@ -7,7 +7,14 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import net.portswigger.mcp.security.HttpRequestSecurity
 import net.portswigger.mcp.security.UserApprovalHandler
@@ -39,9 +46,6 @@ class ProxyEndToEndTest {
     private val testPort = findAvailablePort()
     private val persistedObject = mockk<PersistedObject>()
 
-    @Volatile
-    private var serverStarted = false
-
     init {
         every { persistedObject.getBoolean(any()) } returns true
         every { persistedObject.getString(any()) } returns "127.0.0.1"
@@ -49,6 +53,7 @@ class ProxyEndToEndTest {
         every { persistedObject.setBoolean(any(), any()) } returns Unit
         every { persistedObject.setString(any(), any()) } returns Unit
         every { persistedObject.setInteger(any(), any()) } returns Unit
+        every { api.utilities().urlUtils().encode("hello world") } returns "hello%20world"
     }
 
     private val mockLogging = mockk<Logging>().apply {
@@ -113,20 +118,15 @@ class ProxyEndToEndTest {
 
     @BeforeEach
     fun setup(): Unit = runBlocking {
+        val started = CompletableDeferred<Unit>()
         serverManager.start(config) { state ->
-            if (state is ServerState.Running) {
-                serverStarted = true
+            when (state) {
+                ServerState.Running -> started.complete(Unit)
+                is ServerState.Failed -> started.completeExceptionally(state.exception)
+                else -> Unit
             }
         }
-
-        var attempts = 0
-        while (!serverStarted && attempts < 10) {
-            delay(100)
-            attempts++
-        }
-        if (!serverStarted) {
-            throw IllegalStateException("Server failed to start after timeout")
-        }
+        withTimeout(10_000) { started.await() }
 
         val jarFile = File("libs/mcp-proxy-all.jar")
         check(jarFile.exists()) {
@@ -209,7 +209,7 @@ class ProxyEndToEndTest {
             val result = client.callTool("url_encode", mapOf("content" to "hello world"))
             assertNotNull(result, "Tool call result should not be null")
             assertFalse(result?.isError ?: false, "Tool call should not return an error")
-            assertTrue(result?.content?.first() is TextContent, "Result should contain TextContent")
+            assertEquals("hello%20world", (result!!.content.single() as TextContent).text)
         }
     }
 }
