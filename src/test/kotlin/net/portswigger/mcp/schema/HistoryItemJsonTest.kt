@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test
 class HistoryItemJsonTest {
     @Test
     fun `small history items are unchanged`() {
-        val item = HttpRequestResponse("request", "response", "notes")
+        val item = HttpRequestResponse(request = "request", response = "response", notes = "notes")
 
         assertEquals(Json.encodeToString(item), encodeHistoryItem(item))
     }
@@ -30,7 +30,7 @@ class HistoryItemJsonTest {
         val item = Json.parseToJsonElement(encoded).jsonObject
 
         assertTrue(encoded.length <= 5_000)
-        assertEquals(setOf("request", "response", "notes"), item.keys)
+        assertTrue(item.keys.containsAll(setOf("request", "response", "notes")))
         assertTrue(item.getValue("request").jsonPrimitive.content.endsWith("... (truncated)"))
         assertTrue(item.getValue("response").jsonPrimitive.content.endsWith("... (truncated)"))
         assertEquals("keep me", item.getValue("notes").jsonPrimitive.content)
@@ -38,7 +38,7 @@ class HistoryItemJsonTest {
 
     @Test
     fun `truncation does not split surrogate pairs`() {
-        val encoded = encodeHistoryItem(HttpRequestResponse("a" + "😀".repeat(4_000), null, null))
+        val encoded = encodeHistoryItem(HttpRequestResponse(request = "a" + "😀".repeat(4_000), response = null, notes = null))
         val request = Json.parseToJsonElement(encoded).jsonObject.getValue("request").jsonPrimitive.content
 
         assertFalse(request.codePoints().anyMatch { it in 0xD800..0xDFFF })

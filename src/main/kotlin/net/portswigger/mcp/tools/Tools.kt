@@ -370,6 +370,28 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { encodeHistoryItem(it.toSerializableForm()) }
     }
 
+    mcpTool<ExportProxyHttpHistoryItem>(
+        "Exports a single proxy HTTP history item by its ID to a file and returns the file path. " +
+        "Use the id field from get_proxy_http_history or get_proxy_http_history_regex results. " +
+        "The full request and response are written to the file without truncation."
+    ) {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history export")
+        }
+        if (!allowed) {
+            return@mcpTool "HTTP history access denied by Burp Suite"
+        }
+
+        val item = api.proxy().history().find { it.id() == id }
+            ?: return@mcpTool "No proxy history item found with id $id"
+
+        val serialized = Json.encodeToString(item.toSerializableForm())
+        val file = java.io.File.createTempFile("burp_history_${id}_", ".json")
+        file.writeText(serialized)
+
+        "Full history item written to: ${file.absolutePath}"
+    }
+
     mcpTool<SetTaskExecutionEngineState>("Sets the state of Burp's task execution engine (paused or unpaused)") {
         api.burpSuite().taskExecutionEngine().state = if (running) RUNNING else PAUSED
 
@@ -524,6 +546,9 @@ data class GetProxyWebsocketHistory(override val count: Int, override val offset
 @Serializable
 data class GetProxyWebsocketHistoryRegex(val regex: String, override val count: Int, override val offset: Int) :
     Paginated
+
+@Serializable
+data class ExportProxyHttpHistoryItem(val id: Int)
 
 @Serializable
 data class GenerateCollaboratorPayload(
