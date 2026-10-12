@@ -6,6 +6,10 @@ Integrate Burp Suite with AI Clients using the Model Context Protocol (MCP).
 
 For more information about the protocol visit: [modelcontextprotocol.io](https://modelcontextprotocol.io/)
 
+Development notes and the codebase map are in [`localdev/KNOWLEDGEBASE.md`](localdev/KNOWLEDGEBASE.md). The `localdev` directory has its own Git history and is excluded from this repository.
+
+For each development phase, increment the patch version in `gradle.properties` by one, then keep `ExtensionVersion.kt` and `BappManifest.bmf` in sync. The built extension JAR includes that version in its filename. Record the change and its verification status in the local knowledge base. Use PortSwigger's [Montoya API](https://github.com/PortSwigger/burp-extensions-montoya-api) for Burp integration.
+
 ## Features
 
 - Connect Burp Suite to AI clients through MCP
@@ -45,7 +49,7 @@ Ensure that the following prerequisites are met before building and installing t
    ./gradlew embedProxyJar
    ```
 
-   This command compiles the source code and packages it into a JAR file located in `build/libs/burp-mcp-all.jar`.
+   This command compiles the source code and packages it into `build/libs/burp-mcp-all-v1.3.1.jar`.
 
 ### Loading the Extension into Burp Suite
 
@@ -62,7 +66,7 @@ Upon successful loading, the MCP Server Extension will be active within Burp Sui
 ## Configuration
 
 ### Configuring the Extension
-Configuration for the extension is done through the Burp Suite UI in the `MCP v1.2` tab.
+Configuration for the extension is done through the Burp Suite UI in the `MCP v1.3.1` tab.
 - **Toggle the MCP Server**: The `Enabled` checkbox controls whether the MCP server is active.
 - **Enable config editing**: The `Enable tools that can edit your config` checkbox allows the MCP server to expose tools which can edit Burp configuration files.
 - **Advanced options**: You can configure the port and host for the MCP server. By default, it listens on `http://127.0.0.1:9876`.
@@ -149,7 +153,7 @@ Extend the Paginated interface to add auto-pagination support.
 
 ## New enhancements
 
-These commits turn the extension from a request-and-history bridge into a suite tab that can drive Repeater, Collaborator, proxy notes, and other loaded extensions. The suite tab is labeled `MCP v1.2`. The Gradle and BApp version stay separate from that label.
+These commits turn the extension from a request-and-history bridge into a suite tab that can drive Repeater, Collaborator, proxy notes, and other loaded extensions. The suite tab is labeled `MCP v1.3.1`.
 
 ### Suite tab
 
@@ -171,6 +175,10 @@ The left side of the tab is an activity log. Each MCP tool call is recorded as `
 - `call_extension_command` sends a command header through Burp's HTTP API. ATOR commands are `status`, `refresh`, `export`, and `import`. `import` reads ATOR export JSON from `body`.
 
 > Note: Only repeater tab functionalities are fully tested and deployed; other tools are still in beta-stage expect instability will check and provide fixes while facing. As each workflow differs
+
+### Development record
+
+Version `1.3.1` adds a versioned extension JAR and aligns the Gradle, Burp tab, BApp, and CI release versions. The proxy embedding task now declares its actual JAR input, and the MCP server integration tests wait for a startup signal. `./gradlew test embedProxyJar` passed all 124 tests; manual verification in Burp is pending.
 
 ### Updated tools
 

@@ -18,6 +18,7 @@ import org.junit.jupiter.api.assertDoesNotThrow
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -36,8 +37,8 @@ class ProxyEndToEndTest {
     private val testPort = findAvailablePort()
     private val persistedObject = mockk<PersistedObject>()
 
-    @Volatile
-    private var serverStarted = false
+    private val serverReady = CountDownLatch(1)
+    private var serverStartFailure: Throwable? = null
 
     init {
         every { persistedObject.getBoolean(any()) } returns true
@@ -65,19 +66,18 @@ class ProxyEndToEndTest {
     @BeforeEach
     fun setup(): Unit = runBlocking {
         serverManager.start(config) { state ->
-            if (state is ServerState.Running) {
-                serverStarted = true
+            when (state) {
+                ServerState.Running -> serverReady.countDown()
+                is ServerState.Failed -> {
+                    serverStartFailure = state.exception
+                    serverReady.countDown()
+                }
+                else -> Unit
             }
         }
 
-        var attempts = 0
-        while (!serverStarted && attempts < 10) {
-            delay(100)
-            attempts++
-        }
-        if (!serverStarted) {
-            throw IllegalStateException("Server failed to start after timeout")
-        }
+        check(serverReady.await(10, TimeUnit.SECONDS)) { "Server failed to start after timeout" }
+        serverStartFailure?.let { throw IllegalStateException("Server failed to start", it) }
 
         val jarFile = File("libs/mcp-proxy-all.jar")
         check(jarFile.exists()) {

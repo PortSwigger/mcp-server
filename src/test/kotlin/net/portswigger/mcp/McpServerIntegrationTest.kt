@@ -5,7 +5,6 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import net.portswigger.mcp.config.McpConfig
 import org.junit.jupiter.api.AfterEach
@@ -13,6 +12,8 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class McpServerIntegrationTest {
     private val client = TestSseMcpClient()
@@ -20,7 +21,8 @@ class McpServerIntegrationTest {
     private val serverManager = KtorServerManager(api)
     private val testPort = findAvailablePort()
     private val persistedObject = mockk<PersistedObject>()
-    private var serverStarted = false
+    private val serverReady = CountDownLatch(1)
+    private var serverStartFailure: Throwable? = null
 
     init {
         every { persistedObject.getBoolean(any()) } returns true
@@ -41,22 +43,17 @@ class McpServerIntegrationTest {
     @BeforeEach
     fun setup() {
         serverManager.start(config) { state ->
-            if (state is ServerState.Running) {
-                serverStarted = true
+            when (state) {
+                ServerState.Running -> serverReady.countDown()
+                is ServerState.Failed -> {
+                    serverStartFailure = state.exception
+                    serverReady.countDown()
+                }
+                else -> Unit
             }
         }
-        
-        runBlocking {
-            var attempts = 0
-            while (!serverStarted && attempts < 10) {
-                delay(100)
-                attempts++
-            }
-            
-            if (!serverStarted) {
-                throw IllegalStateException("Server failed to start after timeout")
-            }
-        }
+        check(serverReady.await(10, TimeUnit.SECONDS)) { "Server failed to start after timeout" }
+        serverStartFailure?.let { throw IllegalStateException("Server failed to start", it) }
     }
 
     private fun findAvailablePort(): Int {

@@ -63,7 +63,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: burp-mcp-all
-          path: build/libs/burp-mcp-all.jar
+          path: build/libs/burp-mcp-all-v*.jar
           if-no-files-found: error
           retention-days: 30
 
@@ -90,28 +90,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          jar=$(find release -type f -name 'burp-mcp-all.jar' -print -quit)
-          if [[ -z "$jar" ]]; then
+          version=$(sed -n 's/^version=//p' gradle.properties)
+          if [[ -z "$version" ]]; then
+            echo "Could not read the Gradle project version." >&2
+            exit 1
+          fi
+          jar="release/burp-mcp-all-v${version}.jar"
+          if [[ ! -f "$jar" ]]; then
             echo "Built JAR was not found in the downloaded artifact." >&2
             find release -type f -print >&2
             exit 1
           fi
-          cp "$jar" burp-mcp-all.jar
-          version=$(sed -n 's/.*const val VERSION = "\([^"]*\)".*/\1/p' src/main/kotlin/net/portswigger/mcp/ExtensionVersion.kt)
-          if [[ -z "$version" ]]; then
-            echo "Could not read ExtensionVersion.VERSION." >&2
-            exit 1
-          fi
           short="${GITHUB_SHA::7}"
           tag="build-${GITHUB_SHA}"
-          checksum=$(sha256sum burp-mcp-all.jar | awk '{print $1}')
+          checksum=$(sha256sum "$jar" | awk '{print $1}')
           notes_file=$(mktemp)
           {
-            echo "Download \`burp-mcp-all.jar\` and load it in Burp Suite."
+            echo "Download \`burp-mcp-all-v${version}.jar\` and load it in Burp Suite."
             echo
             echo "1. Open Extensions, then Add."
             echo "2. Set the extension type to Java."
-            echo "3. Select \`burp-mcp-all.jar\`."
+            echo "3. Select \`burp-mcp-all-v${version}.jar\`."
             echo
             echo "Do not install \`libs/mcp-proxy-all.jar\` as a Burp extension."
             echo
@@ -121,9 +120,9 @@ jobs:
             echo "- SHA-256: ${checksum}"
           } > "$notes_file"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" burp-mcp-all.jar --clobber
+            gh release upload "$tag" "$jar" --clobber
           else
-            gh release create "$tag" burp-mcp-all.jar \
+            gh release create "$tag" "$jar" \
               --target "$GITHUB_SHA" \
               --title "Burp MCP Server v${version} (${short})" \
               --notes-file "$notes_file" \
