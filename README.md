@@ -49,7 +49,7 @@ Ensure that the following prerequisites are met before building and installing t
    ./gradlew embedProxyJar
    ```
 
-   This command compiles the source code and packages it into `build/libs/burp-mcp-all-v1.3.1.jar`.
+   This command compiles the source code and packages it into `build/libs/burp-mcp-all-v1.3.2.jar`.
 
 ### Loading the Extension into Burp Suite
 
@@ -66,7 +66,7 @@ Upon successful loading, the MCP Server Extension will be active within Burp Sui
 ## Configuration
 
 ### Configuring the Extension
-Configuration for the extension is done through the Burp Suite UI in the `MCP v1.3.1` tab.
+Configuration for the extension is done through the Burp Suite UI in the `MCP v1.3.2` tab.
 - **Toggle the MCP Server**: The `Enabled` checkbox controls whether the MCP server is active.
 - **Enable config editing**: The `Enable tools that can edit your config` checkbox allows the MCP server to expose tools which can edit Burp configuration files.
 - **Advanced options**: You can configure the port and host for the MCP server. By default, it listens on `http://127.0.0.1:9876`.
@@ -146,6 +146,8 @@ cp build/libs/mcp-proxy-all.jar /path/to/mcp-server/libs/mcp-proxy-all.jar
 Tools are defined in `src/main/kotlin/net/portswigger/mcp/tools/Tools.kt`. To define new tools, create a new serializable
 data class with the required parameters which will come from the LLM.
 
+The full catalog of names exposed to MCP clients and descriptions is in [`tools.md`](tools.md).
+
 The tool name is auto-derived from its parameters data class. A description is also needed for the LLM. You can return
 a string or a `List<ContentBlock>` to provide data back to the LLM.
 
@@ -153,7 +155,7 @@ Extend the Paginated interface to add auto-pagination support.
 
 ## New enhancements
 
-These commits turn the extension from a request-and-history bridge into a suite tab that can drive Repeater, Collaborator, proxy notes, and other loaded extensions. The suite tab is labeled `MCP v1.3.1`.
+These commits turn the extension from a request-and-history bridge into a suite tab that can drive Repeater, Collaborator, proxy notes, and other loaded extensions. The suite tab is labeled `MCP v1.3.2`.
 
 ### Suite tab
 
@@ -179,6 +181,8 @@ The left side of the tab is an activity log. Each MCP tool call is recorded as `
 ### Development record
 
 Version `1.3.1` adds a versioned extension JAR and aligns the Gradle, Burp tab, BApp, and CI release versions. The proxy embedding task now declares its actual JAR input, and the MCP server integration tests wait for a startup signal. `./gradlew test embedProxyJar` passed all 124 tests; manual verification in Burp is pending.
+
+Version `1.3.2` adds [`tools.md`](tools.md), covering all 39 registered MCP tools and their exact LLM invocation names. The catalog matches source registration, and `./gradlew test embedProxyJar` passed all 124 tests. Manual verification in Burp is pending.
 
 ### Updated tools
 
