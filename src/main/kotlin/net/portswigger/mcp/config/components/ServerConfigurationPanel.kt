@@ -16,6 +16,7 @@ class ServerConfigurationPanel(
 ) : JPanel() {
 
     private lateinit var alwaysAllowHttpHistoryCheckBox: JCheckBox
+    private lateinit var alwaysAllowCapturedRequestsCheckBox: JCheckBox
     private lateinit var alwaysAllowWebSocketHistoryCheckBox: JCheckBox
     private lateinit var alwaysAllowOrganizerCheckBox: JCheckBox
 
@@ -72,6 +73,14 @@ class ServerConfigurationPanel(
         add(alwaysAllowHttpHistoryCheckBox)
         add(createVerticalStrut(Design.Spacing.SM))
 
+        alwaysAllowCapturedRequestsCheckBox = createIndentedCheckBox(
+            "Always allow captured HTTP request access",
+            config.alwaysAllowCapturedRequests,
+            config.requireDataAccessApproval
+        ) { config.alwaysAllowCapturedRequests = it }
+        add(alwaysAllowCapturedRequestsCheckBox)
+        add(createVerticalStrut(Design.Spacing.SM))
+
         alwaysAllowWebSocketHistoryCheckBox = createIndentedCheckBox(
             "Always allow WebSocket history access",
             config.alwaysAllowWebSocketHistory,
@@ -119,13 +128,16 @@ class ServerConfigurationPanel(
             config.requireDataAccessApproval = enabled
             if (!enabled) {
                 config.alwaysAllowHttpHistory = false
+                config.alwaysAllowCapturedRequests = false
                 config.alwaysAllowWebSocketHistory = false
                 config.alwaysAllowOrganizer = false
                 alwaysAllowHttpHistoryCheckBox.isSelected = false
+                alwaysAllowCapturedRequestsCheckBox.isSelected = false
                 alwaysAllowWebSocketHistoryCheckBox.isSelected = false
                 alwaysAllowOrganizerCheckBox.isSelected = false
             }
             alwaysAllowHttpHistoryCheckBox.isEnabled = enabled
+            alwaysAllowCapturedRequestsCheckBox.isEnabled = enabled
             alwaysAllowWebSocketHistoryCheckBox.isEnabled = enabled
             alwaysAllowOrganizerCheckBox.isEnabled = enabled
         }
@@ -134,6 +146,7 @@ class ServerConfigurationPanel(
     fun updateDataAccessCheckboxes() {
         SwingUtilities.invokeLater {
             alwaysAllowHttpHistoryCheckBox.isSelected = config.alwaysAllowHttpHistory
+            alwaysAllowCapturedRequestsCheckBox.isSelected = config.alwaysAllowCapturedRequests
             alwaysAllowWebSocketHistoryCheckBox.isSelected = config.alwaysAllowWebSocketHistory
             alwaysAllowOrganizerCheckBox.isSelected = config.alwaysAllowOrganizer
         }

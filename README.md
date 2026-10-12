@@ -49,7 +49,7 @@ Ensure that the following prerequisites are met before building and installing t
    ./gradlew embedProxyJar
    ```
 
-   This command compiles the source code and packages it into `build/libs/burp-mcp-all-v1.3.2.jar`.
+   This command compiles the source code and packages it into `build/libs/burp-mcp-all-v1.3.3.jar`.
 
 ### Loading the Extension into Burp Suite
 
@@ -66,7 +66,7 @@ Upon successful loading, the MCP Server Extension will be active within Burp Sui
 ## Configuration
 
 ### Configuring the Extension
-Configuration for the extension is done through the Burp Suite UI in the `MCP v1.3.2` tab.
+Configuration for the extension is done through the Burp Suite UI in the `MCP v1.3.3` tab.
 - **Toggle the MCP Server**: The `Enabled` checkbox controls whether the MCP server is active.
 - **Enable config editing**: The `Enable tools that can edit your config` checkbox allows the MCP server to expose tools which can edit Burp configuration files.
 - **Advanced options**: You can configure the port and host for the MCP server. By default, it listens on `http://127.0.0.1:9876`.
@@ -155,7 +155,7 @@ Extend the Paginated interface to add auto-pagination support.
 
 ## New enhancements
 
-These commits turn the extension from a request-and-history bridge into a suite tab that can drive Repeater, Collaborator, proxy notes, and other loaded extensions. The suite tab is labeled `MCP v1.3.2`.
+These commits turn the extension from a request-and-history bridge into a suite tab that can drive Repeater, Collaborator, proxy notes, and other loaded extensions. The suite tab is labeled `MCP v1.3.3`.
 
 ### Suite tab
 
@@ -183,6 +183,8 @@ The left side of the tab is an activity log. Each MCP tool call is recorded as `
 Version `1.3.1` adds a versioned extension JAR and aligns the Gradle, Burp tab, BApp, and CI release versions. The proxy embedding task now declares its actual JAR input, and the MCP server integration tests wait for a startup signal. `./gradlew test embedProxyJar` passed all 124 tests; manual verification in Burp is pending.
 
 Version `1.3.2` adds [`tools.md`](tools.md), covering all 39 registered MCP tools and their exact LLM invocation names. The catalog matches source registration, and `./gradlew test embedProxyJar` passed all 124 tests. Manual verification in Burp is pending.
+
+Version `1.3.3` adds `send_recorded_request_to_repeater`. Give it `source: "proxy"` and a `requestId` from `get_proxy_http_history_summary`, or `source: "captured"` and a capture ID from `list_captured_http_requests`. It opens the selected request in Repeater, clicks Send there, and returns the fresh response. The captured list includes HTTP requests observed after the extension loads, keeps the latest 500, and uses Montoya message IDs; these IDs are **not** the visible `#` values in Burp Logger. If Repeater Send is unavailable, the tool reports that the request was not sent. Reading captured requests and sending traffic use the existing Burp approval controls, with a separate captured-request access setting. `./gradlew test embedProxyJar` passed all 127 tests, and the JAR contains the extension class and embedded proxy. Burp UI verification is pending.
 
 ### Updated tools
 

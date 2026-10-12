@@ -51,7 +51,8 @@ class ToolsKtTest {
     
     private val client = TestSseMcpClient()
     private val api = mockk<MontoyaApi>(relaxed = true)
-    private val serverManager = KtorServerManager(api)
+    private val capturedRequests = CapturedHttpRequests()
+    private val serverManager = KtorServerManager(api, capturedRequests)
     private val testPort = findAvailablePort()
     private var serverStarted = false
     private val config: McpConfig
@@ -65,6 +66,7 @@ class ToolsKtTest {
             every { getBoolean("requireHttpRequestApproval") } returns false
             every { getBoolean("requireDataAccessApproval") } returns false
             every { getBoolean("_alwaysAllowHttpHistory") } returns false
+            every { getBoolean("_alwaysAllowCapturedRequests") } returns false
             every { getBoolean("_alwaysAllowWebSocketHistory") } returns false
             every { getBoolean("_alwaysAllowOrganizer") } returns false
             every { getString("host") } returns "127.0.0.1"
@@ -144,7 +146,7 @@ class ToolsKtTest {
 
         runBlocking {
             var attempts = 0
-            while (!serverStarted && attempts < 30) {
+            while (!serverStarted && attempts < 100) {
                 delay(100)
                 attempts++
             }
@@ -1150,6 +1152,100 @@ class ToolsKtTest {
 
             verify { repeater.sendToRepeater(request, "history-4") }
             verify { http.sendRequest(request, HttpMode.HTTP_1, "mcp-repeater-history-4") }
+        }
+
+        @Test
+        fun `proxy history id opens and sends in repeater in one tool call`() {
+            RepeaterSession.resetForTests()
+            val proxy = mockk<Proxy>()
+            val repeater = mockk<burp.api.montoya.repeater.Repeater>(relaxed = true)
+            val item = mockk<ProxyHttpRequestResponse>()
+            val request = mockk<HttpRequest>()
+            val service = mockk<burp.api.montoya.http.HttpService>()
+            every { api.proxy() } returns proxy
+            every { api.repeater() } returns repeater
+            every { proxy.history() } returns listOf(item)
+            every { item.id() } returns 42
+            every { item.finalRequest() } returns request
+            every { item.annotations() } returns null
+            every { request.httpService() } returns service
+            every { request.httpVersion() } returns "HTTP/2"
+            every { request.toString() } returns "GET /orders HTTP/2\r\nHost: example.com\r\n\r\n"
+            every { service.host() } returns "example.com"
+            every { service.port() } returns 443
+
+            mockkObject(RepeaterUi)
+            try {
+                every { RepeaterUi.trySend(any(), "proxy-42", any(), any()) } returns
+                    RepeaterUiSend.Response("HTTP/2 200 OK\r\n\r\nfresh")
+
+                runBlocking {
+                    val result = client.callTool(
+                        "send_recorded_request_to_repeater",
+                        mapOf("source" to "proxy", "requestId" to 42)
+                    )
+                    assertTrue(result.expectTextContent().contains("fresh"))
+                }
+
+                verify(exactly = 1) { repeater.sendToRepeater(request, "proxy-42") }
+                verify(exactly = 1) { RepeaterUi.trySend(any(), "proxy-42", any(), any()) }
+            } finally {
+                unmockkObject(RepeaterUi)
+            }
+        }
+
+        @Test
+        fun `captured request id is listed and sent while missing id is rejected`() {
+            RepeaterSession.resetForTests()
+            val repeater = mockk<burp.api.montoya.repeater.Repeater>(relaxed = true)
+            val request = mockk<HttpRequest>()
+            val service = mockk<burp.api.montoya.http.HttpService>()
+            every { api.repeater() } returns repeater
+            every { request.httpService() } returns service
+            every { request.httpVersion() } returns "HTTP/1.1"
+            every { request.method() } returns "POST"
+            every { request.url() } returns "https://example.com/login"
+            every { request.toString() } returns "POST /login HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            every { service.host() } returns "example.com"
+            every { service.port() } returns 443
+            capturedRequests.record(91, request, "PROXY")
+
+            mockkObject(RepeaterUi)
+            try {
+                every { RepeaterUi.trySend(any(), "captured-91", any(), any()) } returns
+                    RepeaterUiSend.Response("HTTP/1.1 200 OK\r\n\r\nfresh login")
+
+                runBlocking {
+                    val listed = client.callTool("list_captured_http_requests", mapOf("limit" to 5))
+                    assertTrue(listed.expectTextContent().contains("\"id\":91"))
+                    assertTrue(listed.expectTextContent().contains("https://example.com/login"))
+
+                    val missing = client.callTool(
+                        "send_recorded_request_to_repeater",
+                        mapOf("source" to "captured", "requestId" to 92)
+                    )
+                    assertTrue(missing.expectTextContent().contains("No captured HTTP request with id 92"))
+
+                    val sent = client.callTool(
+                        "send_recorded_request_to_repeater",
+                        mapOf("source" to "captured", "requestId" to 91)
+                    )
+                    assertTrue(sent.expectTextContent().contains("fresh login"))
+
+                    every { RepeaterUi.trySend(any(), "captured-missing-control", any(), any()) } returns
+                        RepeaterUiSend.NotAvailable("Repeater Send control unavailable")
+                    val unavailable = client.callTool(
+                        "send_recorded_request_to_repeater",
+                        mapOf("source" to "captured", "requestId" to 91, "tabName" to "captured-missing-control")
+                    )
+                    assertTrue(unavailable.expectTextContent().contains("Repeater Send control unavailable"))
+                    assertTrue(unavailable.expectTextContent().contains("response pane was not updated"))
+                }
+
+                verify(exactly = 1) { repeater.sendToRepeater(request, "captured-91") }
+            } finally {
+                unmockkObject(RepeaterUi)
+            }
         }
 
         @Test

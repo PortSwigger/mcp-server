@@ -28,6 +28,16 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
             }
         }
 
+    private var _alwaysAllowCapturedRequests by storage.boolean(false)
+    var alwaysAllowCapturedRequests: Boolean
+        get() = _alwaysAllowCapturedRequests
+        set(value) {
+            if (_alwaysAllowCapturedRequests != value) {
+                _alwaysAllowCapturedRequests = value
+                notifyDataAccessChanged()
+            }
+        }
+
     private var _alwaysAllowWebSocketHistory by storage.boolean(false)
     var alwaysAllowWebSocketHistory: Boolean
         get() = _alwaysAllowWebSocketHistory

@@ -7,6 +7,7 @@ import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.providers.ClaudeDesktopProvider
 import net.portswigger.mcp.providers.ManualProxyInstallerProvider
 import net.portswigger.mcp.providers.ProxyJarManager
+import net.portswigger.mcp.tools.CapturedHttpRequests
 
 @Suppress("unused")
 class ExtensionBase : BurpExtension {
@@ -15,7 +16,9 @@ class ExtensionBase : BurpExtension {
         api.extension().setName(ExtensionVersion.NAME)
 
         val config = McpConfig(api.persistence().extensionData(), api.logging())
-        val serverManager = KtorServerManager(api)
+        val capturedRequests = CapturedHttpRequests()
+        val captureRegistration = api.http().registerHttpHandler(capturedRequests)
+        val serverManager = KtorServerManager(api, capturedRequests)
 
         val proxyJarManager = ProxyJarManager(api.logging())
 
@@ -44,6 +47,8 @@ class ExtensionBase : BurpExtension {
 
         api.extension().registerUnloadingHandler {
             serverManager.shutdown()
+            captureRegistration.deregister()
+            capturedRequests.clear()
             configUi.cleanup()
             config.cleanup()
         }

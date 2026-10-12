@@ -1,6 +1,6 @@
 # Burp MCP server tools
 
-This catalog lists the 39 tools registered by `src/main/kotlin/net/portswigger/mcp/tools/Tools.kt` in version `1.3.2`. **Tool name to invoke** is the exact name exposed to an LLM through MCP. The four tools in the Burp Professional section are registered only in that edition. History and Organizer reads, HTTP sends, and extension probes may prompt for approval in Burp; configuration writes require the configuration editing option to be enabled. Paginated tools accept `count` and `offset`.
+This catalog lists the 41 tools registered by `src/main/kotlin/net/portswigger/mcp/tools/Tools.kt` in version `1.3.3`. **Tool name to invoke** is the exact name exposed to an LLM through MCP. The four tools in the Burp Professional section are registered only in that edition. History, captured requests, and Organizer reads, HTTP sends, and extension probes may prompt for approval in Burp; configuration writes require the configuration editing option to be enabled. Paginated tools accept `count` and `offset`.
 
 ## HTTP requests, Repeater, and Intruder
 
@@ -16,6 +16,7 @@ This catalog lists the 39 tools registered by `src/main/kotlin/net/portswigger/m
 | Set Repeater notes | `set_repeater_notes` | Replaces or appends notes for a named MCP-created Repeater tab and attempts to update its Notes editor. |
 | Set Repeater response end marker | `set_repeater_response_end_marker` | Saves or clears the marker used to identify the end of a named tab's response, with optional truncation after that marker. |
 | Send proxy history item to Repeater | `send_proxy_history_to_repeater` | Opens a proxy HTTP history item in Repeater, optionally copying notes, selecting the final request, and sending it immediately. |
+| Send recorded request to Repeater | `send_recorded_request_to_repeater` | Opens a Proxy history item (`source: proxy`) or a captured HTTP request (`source: captured`) by `requestId`, clicks Send in Repeater, and returns its fresh response. A captured ID comes from `list_captured_http_requests`; it is not Burp Logger's visible `#`. |
 | Send to Intruder | `send_to_intruder` | Opens a raw HTTP request in Burp Intruder, with an optional tab name. |
 
 ## Proxy history, WebSocket history, and Organizer
@@ -26,6 +27,7 @@ This catalog lists the 39 tools registered by `src/main/kotlin/net/portswigger/m
 | Search proxy HTTP history | `get_proxy_http_history_regex` | Returns paginated proxy HTTP history items whose contents match a regular expression. |
 | Summarize proxy HTTP history | `get_proxy_http_history_summary` | Returns short paginated JSON lines with each item's ID, time, method, URL, status, notes, and edited state; supports an optional regex. |
 | Get proxy HTTP history item | `get_proxy_http_history_item` | Returns one proxy HTTP history item by ID, including request, response, and notes. |
+| List captured HTTP requests | `list_captured_http_requests` | Lists recent HTTP requests observed after this extension loaded, with capture ID, source Burp tool, method, and URL. The 500 most recent IDs are retained; these IDs differ from Burp Logger's visible `#`. |
 | Set proxy history notes | `set_proxy_history_notes` | Writes or appends notes to a history item selected by ID or regex; can also set its highlight color. |
 | Get proxy WebSocket history | `get_proxy_websocket_history` | Returns paginated proxy WebSocket history items. |
 | Search proxy WebSocket history | `get_proxy_websocket_history_regex` | Returns paginated proxy WebSocket history items matching a regular expression. |

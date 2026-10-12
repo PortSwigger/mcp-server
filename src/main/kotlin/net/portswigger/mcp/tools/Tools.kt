@@ -110,7 +110,7 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\r", "")          // Actual CR → remove
     .replace("\n", "\r\n")      // All LF → proper CRLF
 
-fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
+fun Server.registerTools(api: MontoyaApi, config: McpConfig, capturedRequests: CapturedHttpRequests) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {
@@ -551,6 +551,79 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         )
     }
 
+    mcpTool<ListCapturedHttpRequests>(
+        "Lists recent HTTP requests captured through Montoya since this extension loaded. " +
+            "Each entry has a capture ID, Burp tool, method, and URL. Use the capture ID, not Burp Logger's visible #, " +
+            "with send_recorded_request_to_repeater source captured. Only the most recent 500 requests are retained."
+    ) {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.CAPTURED_REQUESTS, config, api, "captured requests")
+        }
+        if (!allowed) return@mcpTool "Captured request access denied by Burp Suite"
+        val entries = capturedRequests.recent(limit.coerceIn(1, 100))
+        if (entries.isEmpty()) return@mcpTool "No HTTP requests have been captured since this extension loaded."
+        entries.joinToString("\n") { entry ->
+            Json.encodeToString(
+                CapturedHttpRequestSummary(
+                    id = entry.id,
+                    tool = entry.tool,
+                    method = runCatching { entry.request.method() }.getOrNull(),
+                    url = runCatching { entry.request.url() }.getOrNull()
+                )
+            )
+        }
+    }
+
+    mcpTool<SendRecordedRequestToRepeater>(
+        "Opens a recorded HTTP request in a Repeater tab, clicks Repeater Send, and returns the fresh response. " +
+            "For source proxy, requestId is the Proxy HTTP history ID. For source captured, requestId is a capture ID " +
+            "from list_captured_http_requests; it is not Burp Logger's visible #. " +
+            "Only requests captured since this extension loaded are available for source captured. " +
+            "If the Repeater Send control cannot be used, the tool reports that the request was not sent."
+    ) {
+        val normalizedSource = source.trim().lowercase()
+        val selected = when (normalizedSource) {
+            "proxy" -> {
+                val allowed = runBlocking {
+                    checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
+                }
+                if (!allowed) return@mcpTool "HTTP history access denied by Burp Suite"
+                val item = findProxyHistoryItem(api, requestId)
+                    ?: return@mcpTool "No proxy history item with id $requestId."
+                val request = runCatching { item.finalRequest() }.getOrNull() ?: item.request()
+                    ?: return@mcpTool "Proxy history item $requestId has no request."
+                val copiedNotes = runCatching { item.annotations()?.notes() }.getOrNull()
+                request to copiedNotes
+            }
+            "captured" -> {
+                val allowed = runBlocking {
+                    checkDataAccessOrDeny(DataAccessType.CAPTURED_REQUESTS, config, api, "captured requests")
+                }
+                if (!allowed) return@mcpTool "Captured request access denied by Burp Suite"
+                val entry = capturedRequests.get(requestId)
+                    ?: return@mcpTool "No captured HTTP request with id $requestId. Use list_captured_http_requests for available IDs."
+                entry.request to null
+            }
+            else -> return@mcpTool "source must be proxy or captured. Burp Logger's visible # is not a capture ID."
+        }
+
+        val request = selected.first
+        val service = request.httpService()
+        val allowedToSend = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(service.host(), service.port(), config, request.toString(), api)
+        }
+        if (!allowedToSend) return@mcpTool "Send HTTP request denied by Burp Suite"
+
+        val mode = if (runCatching { request.httpVersion() }.getOrNull()?.equals("HTTP/2", true) == true) {
+            HttpMode.HTTP_2
+        } else {
+            HttpMode.HTTP_1
+        }
+        val name = tabName?.takeIf { it.isNotBlank() } ?: "$normalizedSource-$requestId"
+        val opened = openRepeaterTab(api, request, name, mode, notes ?: selected.second)
+        opened + "\n\n" + issueRepeaterTab(api, config, name, null, null, null, null, null, null, null)
+    }
+
     mcpTool<SendRepeaterRequest>(
         "Clicks Send in the named Repeater tab and returns the response shown in that tab's response pane. " +
             "The request leaves from Repeater. The Burp tool and Repeater tab that are already open stay as they are, so manual testing can continue. " +
@@ -860,6 +933,25 @@ data class SendProxyHistoryToRepeater(
     val responseEndMarker: String? = null,
     val truncateAtEndMarker: Boolean? = null,
     val issueFrom: String? = null
+)
+
+@Serializable
+data class ListCapturedHttpRequests(val limit: Int = 20)
+
+@Serializable
+data class SendRecordedRequestToRepeater(
+    val source: String,
+    val requestId: Int,
+    val tabName: String? = null,
+    val notes: String? = null
+)
+
+@Serializable
+internal data class CapturedHttpRequestSummary(
+    val id: Int,
+    val tool: String,
+    val method: String? = null,
+    val url: String? = null
 )
 
 @Serializable
