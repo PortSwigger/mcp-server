@@ -39,16 +39,25 @@ fun AuditIssue.toSerializableForm(): IssueDetails {
     )
 }
 
+// Burp does not implement every ScanTask getter yet; unsupported ones throw rather than return a value.
+private inline fun <T> ifSupported(getter: () -> T): T? = try {
+    getter()
+} catch (_: UnsupportedOperationException) {
+    null
+}
+
 fun ScanTask.toSerializableForm(scanId: String): ScanTaskDetails {
     val audit = this as? Audit
     return ScanTaskDetails(
         scanId = scanId,
         type = if (audit != null) "audit" else "crawl",
-        statusMessage = statusMessage(),
-        requestCount = requestCount(),
-        errorCount = errorCount(),
-        insertionPointCount = audit?.insertionPointCount(),
-        issueCounts = audit?.issues()?.groupingBy { AuditIssueSeverity.valueOf(it.severity().name) }?.eachCount()
+        statusMessage = ifSupported { statusMessage() },
+        requestCount = ifSupported { requestCount() },
+        errorCount = ifSupported { errorCount() },
+        insertionPointCount = audit?.let { ifSupported { it.insertionPointCount() } },
+        issueCounts = audit?.let {
+            ifSupported { it.issues().groupingBy { issue -> AuditIssueSeverity.valueOf(issue.severity().name) }.eachCount() }
+        }
     )
 }
 
@@ -109,8 +118,8 @@ data class ScanTaskDetails(
     val scanId: String,
     val type: String,
     val statusMessage: String?,
-    val requestCount: Int,
-    val errorCount: Int,
+    val requestCount: Int?,
+    val errorCount: Int?,
     val insertionPointCount: Int?,
     val issueCounts: Map<AuditIssueSeverity, Int>?
 )

@@ -1218,6 +1218,25 @@ class ToolsKtTest {
         }
 
         @Test
+        fun `scan status should report unsupported task getters as null`() {
+            val audit = mockAudit().also {
+                every { it.requestCount() } throws UnsupportedOperationException("Currently unsupported.")
+                every { it.insertionPointCount() } throws UnsupportedOperationException("Currently unsupported.")
+            }
+            every { scanner.startAudit(auditConfiguration) } returns audit
+
+            runBlocking {
+                val text = callStartScan("urls" to listOf("https://a.example/")).expectTextContent()
+
+                val status = Json.parseToJsonElement(text).jsonObject
+                assertTrue(status.getValue("scanId").jsonPrimitive.content.isNotBlank())
+                assertEquals(JsonNull, status.getValue("requestCount"))
+                assertEquals(JsonNull, status.getValue("insertionPointCount"))
+                assertEquals(1, status.getValue("errorCount").jsonPrimitive.int)
+            }
+        }
+
+        @Test
         fun `start scan should reject invalid arguments`() {
             runBlocking {
                 listOf(
