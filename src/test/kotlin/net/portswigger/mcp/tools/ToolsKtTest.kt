@@ -1349,33 +1349,33 @@ class ToolsKtTest {
         }
 
         @Test
-        fun `scan cancel should delete only that scan`() {
-            val cancelled = mockAudit()
+        fun `scan delete should delete only that scan`() {
+            val deleted = mockAudit()
             val running = mockAudit()
-            every { scanner.startAudit(auditConfiguration) } returnsMany listOf(cancelled, running)
+            every { scanner.startAudit(auditConfiguration) } returnsMany listOf(deleted, running)
 
             runBlocking {
-                val cancelledId = startScanId("urls" to listOf("https://a.example/"))
+                val deletedId = startScanId("urls" to listOf("https://a.example/"))
                 val runningId = startScanId("urls" to listOf("https://b.example/"))
 
-                client.callTool("scan_cancel", mapOf("scanId" to cancelledId))
-                    .expectTextContent("Scan $cancelledId has been cancelled")
+                client.callTool("scan_delete", mapOf("scanId" to deletedId))
+                    .expectTextContent("Scan $deletedId has been stopped and deleted. Issues it found remain in the site map")
 
-                val status = client.callTool("scan_status", mapOf("scanId" to cancelledId))
+                val status = client.callTool("scan_status", mapOf("scanId" to deletedId))
                 assertEquals(true, status?.isError)
                 assertTrue(status.expectTextContent().contains("Unknown scanId"))
 
                 assertNotEquals(true, client.callTool("scan_status", mapOf("scanId" to runningId))?.isError)
             }
 
-            verify(exactly = 1) { cancelled.delete() }
+            verify(exactly = 1) { deleted.delete() }
             verify(exactly = 0) { running.delete() }
         }
 
         @Test
-        fun `scan status and cancel should reject unknown scan id`() {
+        fun `scan status and delete should reject unknown scan id`() {
             runBlocking {
-                listOf("scan_status", "scan_cancel").forEach { tool ->
+                listOf("scan_status", "scan_delete").forEach { tool ->
                     val result = client.callTool(tool, mapOf("scanId" to "does-not-exist"))
                     assertEquals(true, result?.isError)
                     assertTrue(result.expectTextContent().contains("Unknown scanId 'does-not-exist'"))
@@ -1413,7 +1413,7 @@ class ToolsKtTest {
             assertFalse(tools.any { it.name == "get_collaborator_interactions" })
             assertFalse(tools.any { it.name == "start_scan" })
             assertFalse(tools.any { it.name == "scan_status" })
-            assertFalse(tools.any { it.name == "scan_cancel" })
+            assertFalse(tools.any { it.name == "scan_delete" })
         }
 
         every { version.edition() } returns BurpSuiteEdition.PROFESSIONAL
@@ -1440,7 +1440,7 @@ class ToolsKtTest {
             assertTrue(tools.any { it.name == "get_collaborator_interactions" })
             assertTrue(tools.any { it.name == "start_scan" })
             assertTrue(tools.any { it.name == "scan_status" })
-            assertTrue(tools.any { it.name == "scan_cancel" })
+            assertTrue(tools.any { it.name == "scan_delete" })
         }
     }
 }

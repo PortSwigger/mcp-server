@@ -328,13 +328,13 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         mcpTool<StartScan>(
-            "Starts a Burp Scanner task and returns its status, including a scanId for scan_status and scan_cancel. " +
+            "Starts a Burp Scanner task and returns its status, including a scanId for scan_status and scan_delete. " +
             "scanType 'audit' (default) audits each URL plus every request already in the site map under it " +
             "(same scheme, host, port and path prefix; query strings are ignored), so passing a site root audits " +
             "everything Burp knows about that site. Run a crawl first to populate the site map. " +
             "builtInConfig: LEGACY_ACTIVE_AUDIT_CHECKS (default) or LEGACY_PASSIVE_AUDIT_CHECKS. " +
             "scanType 'crawl' crawls using the URLs as seeds. " +
-            "Audits stay in Burp's task list after finishing; use scan_cancel to remove them. " +
+            "Audits stay in Burp's task list after finishing; use scan_delete to remove them. " +
             "Only scan targets you are authorized to test."
         ) {
             val type = scanType ?: "audit"
@@ -376,7 +376,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                     "MCP starting audit of ${siteMapItems.size + extraRequests.size} requests under: ${prefixes.joinToString()}"
                 )
                 val audit = api.scanner().startAudit(AuditConfiguration.auditConfiguration(auditConfig))
-                // Track before adding requests so the audit can still be cancelled if adding fails
+                // Track before adding requests so the audit can still be deleted if adding fails
                 TrackedScan(audit, prefixes).also { scans[scanId] = it }.apply {
                     // Site map entries that were never requested have no response, which addRequestResponse rejects
                     siteMapItems.forEach {
@@ -403,15 +403,16 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             scanStatusJson(scanId, trackedScan(scanId))
         }
 
-        mcpTool<ScanCancel>(
-            "Cancels a single scan started by start_scan and deletes it from Burp's task list. " +
+        mcpTool<ScanDelete>(
+            "Stops a scan started by start_scan and deletes it from Burp's task list; Burp's extension API cannot " +
+            "stop a scan without deleting it. Issues the scan found stay in the site map and get_scanner_issues. " +
             "Unlike set_task_execution_engine_state, other tasks are not affected."
         ) {
             trackedScan(scanId).task.delete()
             scans.remove(scanId)
-            api.logging().logToOutput("MCP cancelled scan: $scanId")
+            api.logging().logToOutput("MCP deleted scan: $scanId")
 
-            "Scan $scanId has been cancelled"
+            "Scan $scanId has been stopped and deleted. Issues it found remain in the site map"
         }
     }
 
@@ -664,4 +665,4 @@ data class StartScan(
 data class ScanStatus(val scanId: String)
 
 @Serializable
-data class ScanCancel(val scanId: String)
+data class ScanDelete(val scanId: String)
