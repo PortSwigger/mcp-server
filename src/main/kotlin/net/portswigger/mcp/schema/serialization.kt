@@ -46,7 +46,7 @@ private inline fun <T> ifSupported(getter: () -> T): T? = try {
     null
 }
 
-fun ScanTask.toSerializableForm(scanId: String): ScanTaskDetails {
+fun ScanTask.toSerializableForm(scanId: String, siteMapItemCount: Int, issues: List<AuditIssue>): ScanTaskDetails {
     val audit = this as? Audit
     return ScanTaskDetails(
         scanId = scanId,
@@ -55,9 +55,8 @@ fun ScanTask.toSerializableForm(scanId: String): ScanTaskDetails {
         requestCount = ifSupported { requestCount() },
         errorCount = ifSupported { errorCount() },
         insertionPointCount = audit?.let { ifSupported { it.insertionPointCount() } },
-        issueCounts = audit?.let {
-            ifSupported { it.issues().groupingBy { issue -> AuditIssueSeverity.valueOf(issue.severity().name) }.eachCount() }
-        }
+        siteMapItemCount = siteMapItemCount,
+        issueCounts =issues.groupingBy { AuditIssueSeverity.valueOf(it.severity().name) }.eachCount()
     )
 }
 
@@ -121,7 +120,8 @@ data class ScanTaskDetails(
     val requestCount: Int?,
     val errorCount: Int?,
     val insertionPointCount: Int?,
-    val issueCounts: Map<AuditIssueSeverity, Int>?
+    val siteMapItemCount: Int,
+    val issueCounts: Map<AuditIssueSeverity, Int>
 )
 
 @Serializable

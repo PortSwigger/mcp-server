@@ -22,6 +22,8 @@ import burp.api.montoya.scanner.Scanner
 import burp.api.montoya.scanner.audit.Audit
 import burp.api.montoya.scanner.audit.issues.AuditIssue
 import burp.api.montoya.scanner.audit.issues.AuditIssueSeverity
+import burp.api.montoya.sitemap.SiteMap
+import burp.api.montoya.sitemap.SiteMapFilter
 import burp.api.montoya.utilities.Base64Utils
 import burp.api.montoya.utilities.RandomUtils
 import burp.api.montoya.utilities.URLUtils
@@ -1074,10 +1076,19 @@ class ToolsKtTest {
         private val scanner = mockk<Scanner>()
         private val auditConfiguration = mockk<AuditConfiguration>()
         private val crawlConfiguration = mockk<CrawlConfiguration>()
+        private val siteMap = mockk<SiteMap>()
+        private val prefixFilters = mutableMapOf<String, SiteMapFilter>()
+
+        private fun prefixFilter(prefix: String) = prefixFilters.getOrPut(prefix) { mockk() }
 
         @BeforeEach
         fun setupScanner() {
-            mockkStatic(AuditConfiguration::class, CrawlConfiguration::class)
+            mockkStatic(AuditConfiguration::class, CrawlConfiguration::class, SiteMapFilter::class)
+
+            every { api.siteMap() } returns siteMap
+            every { SiteMapFilter.prefixFilter(any()) } answers { prefixFilter(firstArg()) }
+            every { siteMap.requestResponses(any()) } returns emptyList()
+            every { siteMap.issues(any()) } returns emptyList()
 
             val burpSuite = mockk<burp.api.montoya.burpsuite.BurpSuite>(relaxed = true)
             val version = mockk<burp.api.montoya.core.Version>()
@@ -1109,7 +1120,7 @@ class ToolsKtTest {
 
         @AfterEach
         fun cleanupScanner() {
-            unmockkStatic(AuditConfiguration::class, CrawlConfiguration::class)
+            unmockkStatic(AuditConfiguration::class, CrawlConfiguration::class, SiteMapFilter::class)
         }
 
         private fun mockRequest(url: String): HttpRequest {
@@ -1120,18 +1131,26 @@ class ToolsKtTest {
             }
             return mockk<HttpRequest>().also {
                 every { it.httpService() } returns service
+                every { it.url() } returns url
                 every { it.toString() } returns "GET ${uri.path} HTTP/1.1\r\nHost: ${uri.host}\r\n\r\n"
             }
         }
 
-        private fun mockAudit(vararg severities: AuditIssueSeverity) = mockk<Audit>(relaxed = true).also { audit ->
+        private fun mockSiteMapItem(url: String, requested: Boolean = true) =
+            mockk<burp.api.montoya.http.message.HttpRequestResponse>().also {
+                every { it.request() } returns mockRequest(url)
+                every { it.response() } returns if (requested) mockk() else null
+            }
+
+        private fun mockIssue(severity: AuditIssueSeverity) = mockk<AuditIssue>().also {
+            every { it.severity() } returns severity
+        }
+
+        private fun mockAudit() = mockk<Audit>(relaxed = true).also { audit ->
             every { audit.statusMessage() } returns "Auditing"
             every { audit.requestCount() } returns 42
             every { audit.errorCount() } returns 1
             every { audit.insertionPointCount() } returns 7
-            every { audit.issues() } returns severities.map { severity ->
-                mockk<AuditIssue>().also { every { it.severity() } returns severity }
-            }
         }
 
         private suspend fun callStartScan(vararg args: Pair<String, Any>) = client.callTool(
@@ -1146,12 +1165,20 @@ class ToolsKtTest {
         }
 
         @Test
-        fun `start scan should audit each url and report status`() {
-            val audit = mockAudit(AuditIssueSeverity.HIGH, AuditIssueSeverity.HIGH, AuditIssueSeverity.LOW)
+        fun `start scan should audit site map under each url and report status`() {
+            val audit = mockAudit()
             every { scanner.startAudit(auditConfiguration) } returns audit
+            val aFilter = prefixFilter("https://a.example/x")
+            val bFilter = prefixFilter("https://b.example/")
+            val knownItems = listOf(mockSiteMapItem("https://a.example/x?id=1"), mockSiteMapItem("https://a.example/x/y"))
+            val aIssues = listOf(mockIssue(AuditIssueSeverity.HIGH), mockIssue(AuditIssueSeverity.HIGH))
+            val bIssues = listOf(mockIssue(AuditIssueSeverity.LOW))
+            every { siteMap.requestResponses(aFilter) } returns knownItems
+            every { siteMap.issues(aFilter) } returns aIssues
+            every { siteMap.issues(bFilter) } returns bIssues
 
             runBlocking {
-                val scanId = startScanId("urls" to listOf("https://a.example/x", "https://b.example/"))
+                val scanId = startScanId("urls" to listOf("https://a.example/x?id=1", "https://b.example"))
                 assertTrue(scanId.isNotBlank())
 
                 val status = Json.parseToJsonElement(
@@ -1163,6 +1190,7 @@ class ToolsKtTest {
                 assertEquals(42, status.getValue("requestCount").jsonPrimitive.int)
                 assertEquals(1, status.getValue("errorCount").jsonPrimitive.int)
                 assertEquals(7, status.getValue("insertionPointCount").jsonPrimitive.int)
+                assertEquals(2, status.getValue("siteMapItemCount").jsonPrimitive.int)
                 val issueCounts = status.getValue("issueCounts").jsonObject
                 assertEquals(2, issueCounts.getValue("HIGH").jsonPrimitive.int)
                 assertEquals(1, issueCounts.getValue("LOW").jsonPrimitive.int)
@@ -1171,7 +1199,32 @@ class ToolsKtTest {
             verify(exactly = 1) {
                 AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS)
             }
-            verify(exactly = 2) { audit.addRequest(any<HttpRequest>()) }
+            knownItems.forEach { verify(exactly = 1) { audit.addRequestResponse(it) } }
+            // a.example/x?id=1 is already in the site map, so only b.example is added as a bare request
+            val addedRequest = slot<HttpRequest>()
+            verify(exactly = 1) { audit.addRequest(capture(addedRequest)) }
+            assertEquals("https://b.example", addedRequest.captured.url())
+        }
+
+        @Test
+        fun `start scan should not cover nested urls twice`() {
+            val audit = mockAudit()
+            every { scanner.startAudit(auditConfiguration) } returns audit
+            val rootFilter = prefixFilter("https://a.example/")
+            val requested = mockSiteMapItem("https://a.example/")
+            val unrequested = mockSiteMapItem("https://a.example/app", requested = false)
+            val unrequestedRequest = unrequested.request()
+            every { siteMap.requestResponses(rootFilter) } returns listOf(requested, unrequested)
+
+            runBlocking {
+                startScanId("urls" to listOf("https://a.example/", "https://a.example/app"))
+            }
+
+            verify(exactly = 0) { SiteMapFilter.prefixFilter("https://a.example/app") }
+            // Entries without a response are audited as bare requests
+            verify(exactly = 1) { audit.addRequestResponse(requested) }
+            verify(exactly = 1) { audit.addRequest(unrequestedRequest) }
+            verify(exactly = 0) { audit.addRequestResponse(unrequested) }
         }
 
         @Test
@@ -1197,6 +1250,7 @@ class ToolsKtTest {
                 every { it.requestCount() } returns 3
             }
             every { scanner.startCrawl(crawlConfiguration) } returns crawl
+            val rootFilter = prefixFilter("https://a.example/")
 
             runBlocking {
                 val text = callStartScan(
@@ -1205,10 +1259,20 @@ class ToolsKtTest {
                 ).expectTextContent()
 
                 val status = Json.parseToJsonElement(text).jsonObject
+                val scanId = status.getValue("scanId").jsonPrimitive.content
                 assertEquals("crawl", status.getValue("type").jsonPrimitive.content)
                 assertEquals(3, status.getValue("requestCount").jsonPrimitive.int)
                 assertEquals(JsonNull, status.getValue("insertionPointCount"))
-                assertEquals(JsonNull, status.getValue("issueCounts"))
+                assertEquals(0, status.getValue("siteMapItemCount").jsonPrimitive.int)
+                assertTrue(status.getValue("issueCounts").jsonObject.isEmpty())
+
+                // The crawl discovers content, so later status calls see a larger site map
+                val discovered = listOf(mockSiteMapItem("https://a.example/"), mockSiteMapItem("https://a.example/app"))
+                every { siteMap.requestResponses(rootFilter) } returns discovered
+                val later = Json.parseToJsonElement(
+                    client.callTool("scan_status", mapOf("scanId" to scanId)).expectTextContent()
+                ).jsonObject
+                assertEquals(2, later.getValue("siteMapItemCount").jsonPrimitive.int)
             }
 
             verify(exactly = 1) {
@@ -1318,6 +1382,12 @@ class ToolsKtTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun `site map prefix should drop query and default the path`() {
+        assertEquals("https://a.example/x", siteMapPrefix("https://a.example/x?id=1#top"))
+        assertEquals("http://127.0.0.1:3000/", siteMapPrefix("http://127.0.0.1:3000"))
     }
 
     @Test
