@@ -9,6 +9,11 @@ import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.scanner.AuditConfiguration
+import burp.api.montoya.scanner.BuiltInAuditConfiguration
+import burp.api.montoya.scanner.BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
+import burp.api.montoya.scanner.CrawlConfiguration
+import burp.api.montoya.scanner.ScanTask
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -21,6 +26,8 @@ import net.portswigger.mcp.security.DataAccessType
 import net.portswigger.mcp.security.HttpRequestSecurity
 import net.portswigger.mcp.security.filterConfigCredentials
 import java.awt.KeyboardFocusManager
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
 import javax.swing.JTextArea
 
@@ -107,6 +114,13 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\\r", "")        // Remaining literal \r → remove
     .replace("\r", "")          // Actual CR → remove
     .replace("\n", "\r\n")      // All LF → proper CRLF
+
+// Montoya scan tasks carry no identifier, so tasks started via MCP are tracked by a generated ID.
+// Held at extension scope so IDs stay valid across MCP server restarts.
+private val scanTasks = ConcurrentHashMap<String, ScanTask>()
+
+private fun scanTask(scanId: String): ScanTask = scanTasks[scanId]
+    ?: throw IllegalArgumentException("Unknown scanId '$scanId'. Only scans started with start_scan are tracked")
 
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
@@ -294,6 +308,70 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                     Json.encodeToString(it.toSerializableForm())
                 }
             }
+        }
+
+        mcpTool<StartScan>(
+            "Starts a Burp Scanner task and returns its status, including a scanId for scan_status and scan_cancel. " +
+            "scanType 'audit' (default) audits each URL using builtInConfig: LEGACY_ACTIVE_AUDIT_CHECKS (default) " +
+            "or LEGACY_PASSIVE_AUDIT_CHECKS. scanType 'crawl' crawls using the URLs as seeds. " +
+            "Only scan targets you are authorized to test."
+        ) {
+            val type = scanType ?: "audit"
+            require(urls.isNotEmpty()) { "urls must contain at least one URL" }
+            require(type == "audit" || type == "crawl") { "Unknown scanType '$type'. Expected 'audit' or 'crawl'" }
+            require(type == "audit" || builtInConfig == null) { "builtInConfig only applies to audit scans" }
+
+            val auditConfig = builtInConfig?.let { name ->
+                BuiltInAuditConfiguration.entries.find { it.name.equals(name, ignoreCase = true) }
+                    ?: throw IllegalArgumentException(
+                        "Unknown builtInConfig '$name'. Expected one of: ${BuiltInAuditConfiguration.entries.joinToString()}"
+                    )
+            } ?: LEGACY_ACTIVE_AUDIT_CHECKS
+
+            val requests = urls.map { HttpRequest.httpRequestFromUrl(it) }
+            val allowed = runBlocking {
+                requests.distinctBy { it.httpService().host() to it.httpService().port() }.all {
+                    HttpRequestSecurity.checkHttpRequestPermission(
+                        it.httpService().host(), it.httpService().port(), config, it.toString(), api
+                    )
+                }
+            }
+            if (!allowed) {
+                api.logging().logToOutput("MCP scan denied: ${urls.joinToString()}")
+                return@mcpTool "Scan denied by Burp Suite"
+            }
+
+            api.logging().logToOutput("MCP starting $type: ${urls.joinToString()}")
+
+            val task = if (type == "audit") {
+                api.scanner().startAudit(AuditConfiguration.auditConfiguration(auditConfig)).apply {
+                    requests.forEach { addRequest(it) }
+                }
+            } else {
+                api.scanner().startCrawl(CrawlConfiguration.crawlConfiguration(*urls.toTypedArray()))
+            }
+
+            val scanId = UUID.randomUUID().toString()
+            scanTasks[scanId] = task
+            Json.encodeToString(task.toSerializableForm(scanId))
+        }
+
+        mcpTool<ScanStatus>(
+            "Reports the progress of a scan started by start_scan: status message, request and error counts, " +
+            "and for audits the insertion point count and issue counts by severity. Use get_scanner_issues for issue details."
+        ) {
+            Json.encodeToString(scanTask(scanId).toSerializableForm(scanId))
+        }
+
+        mcpTool<ScanCancel>(
+            "Cancels a single scan started by start_scan and deletes it from Burp's task list. " +
+            "Unlike set_task_execution_engine_state, other tasks are not affected."
+        ) {
+            scanTask(scanId).delete()
+            scanTasks.remove(scanId)
+            api.logging().logToOutput("MCP cancelled scan: $scanId")
+
+            "Scan $scanId has been cancelled"
         }
     }
 
@@ -534,3 +612,16 @@ data class GenerateCollaboratorPayload(
 data class GetCollaboratorInteractions(
     val payloadId: String? = null
 )
+
+@Serializable
+data class StartScan(
+    val urls: List<String>,
+    val scanType: String? = null,
+    val builtInConfig: String? = null
+)
+
+@Serializable
+data class ScanStatus(val scanId: String)
+
+@Serializable
+data class ScanCancel(val scanId: String)

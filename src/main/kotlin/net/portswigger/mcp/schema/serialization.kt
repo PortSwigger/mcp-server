@@ -4,6 +4,8 @@ import burp.api.montoya.collaborator.Interaction as CollaboratorInteraction
 import burp.api.montoya.organizer.OrganizerItem
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
 import burp.api.montoya.proxy.ProxyWebSocketMessage
+import burp.api.montoya.scanner.ScanTask
+import burp.api.montoya.scanner.audit.Audit
 import burp.api.montoya.scanner.audit.issues.AuditIssue
 import burp.api.montoya.websocket.Direction
 import kotlinx.serialization.Serializable
@@ -34,6 +36,19 @@ fun AuditIssue.toSerializableForm(): IssueDetails {
             remediation = definition().remediation(),
             typeIndex = definition().typeIndex(),
         )
+    )
+}
+
+fun ScanTask.toSerializableForm(scanId: String): ScanTaskDetails {
+    val audit = this as? Audit
+    return ScanTaskDetails(
+        scanId = scanId,
+        type = if (audit != null) "audit" else "crawl",
+        statusMessage = statusMessage(),
+        requestCount = requestCount(),
+        errorCount = errorCount(),
+        insertionPointCount = audit?.insertionPointCount(),
+        issueCounts = audit?.issues()?.groupingBy { AuditIssueSeverity.valueOf(it.severity().name) }?.eachCount()
     )
 }
 
@@ -87,6 +102,17 @@ data class IssueDetails(
     val requestResponses: List<HttpRequestResponse>,
     val collaboratorInteractions: List<Interaction>,
     val definition: AuditIssueDefinition
+)
+
+@Serializable
+data class ScanTaskDetails(
+    val scanId: String,
+    val type: String,
+    val statusMessage: String?,
+    val requestCount: Int,
+    val errorCount: Int,
+    val insertionPointCount: Int?,
+    val issueCounts: Map<AuditIssueSeverity, Int>?
 )
 
 @Serializable
