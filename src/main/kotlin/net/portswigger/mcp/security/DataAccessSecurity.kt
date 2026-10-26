@@ -7,7 +7,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 enum class DataAccessType() {
-    HTTP_HISTORY(), WEBSOCKET_HISTORY(), ORGANIZER();
+    HTTP_HISTORY(), WEBSOCKET_HISTORY(), ORGANIZER(), SITE_MAP();
 }
 
 interface DataAccessApprovalHandler {
@@ -24,6 +24,7 @@ class SwingDataAccessApprovalHandler : DataAccessApprovalHandler {
                     DataAccessType.HTTP_HISTORY -> "HTTP history"
                     DataAccessType.WEBSOCKET_HISTORY -> "WebSocket history"
                     DataAccessType.ORGANIZER -> "Organizer items"
+                    DataAccessType.SITE_MAP -> "site map"
                 }
 
                 val message = buildString {
@@ -53,6 +54,7 @@ class SwingDataAccessApprovalHandler : DataAccessApprovalHandler {
                             DataAccessType.HTTP_HISTORY -> config.alwaysAllowHttpHistory = true
                             DataAccessType.WEBSOCKET_HISTORY -> config.alwaysAllowWebSocketHistory = true
                             DataAccessType.ORGANIZER -> config.alwaysAllowOrganizer = true
+                            DataAccessType.SITE_MAP -> config.alwaysAllowSiteMap = true
                         }
                         continuation.resume(true)
                     }
@@ -81,6 +83,7 @@ object DataAccessSecurity {
             DataAccessType.HTTP_HISTORY -> config.alwaysAllowHttpHistory
             DataAccessType.WEBSOCKET_HISTORY -> config.alwaysAllowWebSocketHistory
             DataAccessType.ORGANIZER -> config.alwaysAllowOrganizer
+            DataAccessType.SITE_MAP -> config.alwaysAllowSiteMap
         }
 
         if (isAlwaysAllowed) {

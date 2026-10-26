@@ -9,6 +9,7 @@ import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.sitemap.SiteMapFilter
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -345,6 +346,23 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { encodeHistoryItem(it.toSerializableForm()) }
     }
 
+    mcpPaginatedTool<GetSiteMap>("Displays items within the Target site map, optionally filtered by a URL prefix such as https://example.com/api/") {
+        val allowed = runBlocking {
+            checkDataAccessOrDeny(DataAccessType.SITE_MAP, config, api, "Site map")
+        }
+        if (!allowed) {
+            return@mcpPaginatedTool sequenceOf("Site map access denied by Burp Suite")
+        }
+
+        val items = if (urlPrefix != null) {
+            api.siteMap().requestResponses(SiteMapFilter.prefixFilter(urlPrefix))
+        } else {
+            api.siteMap().requestResponses()
+        }
+
+        items.asSequence().map { encodeHistoryItem(it.toSerializableForm()) }
+    }
+
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
         val allowed = runBlocking {
             checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
@@ -517,6 +535,9 @@ data class GetOrganizerItems(override val count: Int, override val offset: Int) 
 
 @Serializable
 data class GetOrganizerItemsRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetSiteMap(val urlPrefix: String? = null, override val count: Int, override val offset: Int) : Paginated
 
 @Serializable
 data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated

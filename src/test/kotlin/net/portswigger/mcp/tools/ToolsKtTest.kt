@@ -14,6 +14,8 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import burp.api.montoya.proxy.Proxy
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
+import burp.api.montoya.sitemap.SiteMap
+import burp.api.montoya.sitemap.SiteMapFilter
 import burp.api.montoya.utilities.Base64Utils
 import burp.api.montoya.utilities.RandomUtils
 import burp.api.montoya.utilities.URLUtils
@@ -36,6 +38,9 @@ import net.portswigger.mcp.TestSseMcpClient
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.HttpRequestResponse
 import net.portswigger.mcp.schema.toSerializableForm
+import net.portswigger.mcp.security.DataAccessApprovalHandler
+import net.portswigger.mcp.security.DataAccessSecurity
+import net.portswigger.mcp.security.DataAccessType
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -52,11 +57,12 @@ class ToolsKtTest {
     private val testPort = findAvailablePort()
     private var serverStarted = false
     private val config: McpConfig
+    private val persistedObject: PersistedObject
     private val mockHeaders = mutableListOf<HttpHeader>()
     private val capturedRequest = slot<HttpRequest>()
 
     init {
-        val persistedObject = mockk<PersistedObject>().apply {
+        persistedObject = mockk<PersistedObject>().apply {
             every { getBoolean("enabled") } returns true
             every { getBoolean("configEditingTooling") } returns true
             every { getBoolean("requireHttpRequestApproval") } returns false
@@ -64,6 +70,7 @@ class ToolsKtTest {
             every { getBoolean("_alwaysAllowHttpHistory") } returns false
             every { getBoolean("_alwaysAllowWebSocketHistory") } returns false
             every { getBoolean("_alwaysAllowOrganizer") } returns false
+            every { getBoolean("_alwaysAllowSiteMap") } returns false
             every { getString("host") } returns "127.0.0.1"
             every { getString("_autoApproveTargets") } returns ""
             every { getInteger("port") } returns testPort
@@ -827,6 +834,114 @@ class ToolsKtTest {
                 assertTrue(item.getValue("request").jsonPrimitive.content.endsWith("... (truncated)"))
                 assertTrue(item.getValue("response").jsonPrimitive.content.endsWith("... (truncated)"))
                 assertEquals("keep me", item.getValue("notes").jsonPrimitive.content)
+            }
+        }
+
+        @Test
+        fun `get site map should paginate properly`() {
+            val siteMap = mockk<SiteMap>()
+            val siteMapItems = listOf(
+                mockk<burp.api.montoya.http.message.HttpRequestResponse>(),
+                mockk<burp.api.montoya.http.message.HttpRequestResponse>(),
+                mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+            )
+
+            every { api.siteMap() } returns siteMap
+            every { siteMap.requestResponses() } returns siteMapItems
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+
+            siteMapItems.forEachIndexed { index, item ->
+                every { item.toSerializableForm() } returns HttpRequestResponse(
+                    request = "GET /item${index + 1} HTTP/1.1",
+                    response = "HTTP/1.1 200 OK",
+                    notes = null
+                )
+            }
+
+            runBlocking {
+                val text1 = client.callTool(
+                    "get_site_map", mapOf("count" to 2, "offset" to 0)
+                ).expectTextContent()
+                assertTrue(text1.contains("GET /item1"))
+                assertTrue(text1.contains("GET /item2"))
+                assertFalse(text1.contains("GET /item3"))
+
+                val text2 = client.callTool(
+                    "get_site_map", mapOf("count" to 2, "offset" to 2)
+                ).expectTextContent()
+                assertTrue(text2.contains("GET /item3"))
+
+                val result3 = client.callTool(
+                    "get_site_map", mapOf("count" to 2, "offset" to 3)
+                )
+                assertEquals("Reached end of items", result3.expectTextContent())
+            }
+
+            verify(exactly = 0) { siteMap.requestResponses(any()) }
+        }
+
+        @Test
+        fun `get site map should apply url prefix filter`() {
+            val siteMap = mockk<SiteMap>()
+            val filter = mockk<SiteMapFilter>()
+            val item = mockk<burp.api.montoya.http.message.HttpRequestResponse>()
+
+            mockkStatic(SiteMapFilter::class)
+            try {
+                every { SiteMapFilter.prefixFilter("https://example.com/api/") } returns filter
+                every { api.siteMap() } returns siteMap
+                every { siteMap.requestResponses(filter) } returns listOf(item)
+
+                mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+                every { item.toSerializableForm() } returns HttpRequestResponse(
+                    request = "GET /api/users HTTP/1.1",
+                    response = "HTTP/1.1 200 OK",
+                    notes = null
+                )
+
+                runBlocking {
+                    val text = client.callTool(
+                        "get_site_map", mapOf(
+                            "urlPrefix" to "https://example.com/api/",
+                            "count" to 10,
+                            "offset" to 0
+                        )
+                    ).expectTextContent()
+                    assertTrue(text.contains("GET /api/users"))
+                }
+
+                verify(exactly = 1) { SiteMapFilter.prefixFilter("https://example.com/api/") }
+                verify(exactly = 0) { siteMap.requestResponses() }
+            } finally {
+                unmockkStatic(SiteMapFilter::class)
+            }
+        }
+
+        @Test
+        fun `get site map should respect denied data access`() {
+            val siteMap = mockk<SiteMap>()
+            every { api.siteMap() } returns siteMap
+            every { persistedObject.getBoolean("requireDataAccessApproval") } returns true
+
+            val approvalHandler = mockk<DataAccessApprovalHandler>()
+            coEvery { approvalHandler.requestDataAccess(DataAccessType.SITE_MAP, any()) } returns false
+
+            val originalApprovalHandler = DataAccessSecurity.approvalHandler
+            DataAccessSecurity.approvalHandler = approvalHandler
+            try {
+                runBlocking {
+                    val result = client.callTool(
+                        "get_site_map", mapOf("count" to 10, "offset" to 0)
+                    )
+                    assertEquals("Site map access denied by Burp Suite", result.expectTextContent())
+                }
+
+                coVerify(exactly = 1) { approvalHandler.requestDataAccess(DataAccessType.SITE_MAP, any()) }
+                verify(exactly = 0) { siteMap.requestResponses() }
+                verify(exactly = 0) { siteMap.requestResponses(any()) }
+            } finally {
+                DataAccessSecurity.approvalHandler = originalApprovalHandler
             }
         }
     }
