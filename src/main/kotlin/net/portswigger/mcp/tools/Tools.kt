@@ -14,6 +14,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
+import net.portswigger.mcp.schema.ConstrainedInteger
+import net.portswigger.mcp.schema.IntegerConstraint
 import net.portswigger.mcp.schema.encodeHistoryItem
 import net.portswigger.mcp.schema.toSerializableForm
 import net.portswigger.mcp.security.DataAccessSecurity
@@ -429,12 +431,12 @@ interface HttpServiceParams {
 
 private fun validateHttpService(hostname: String, port: Int) {
     require(hostname.isNotBlank()) { "targetHostname must not be blank" }
-    require(port in 1..65535) { "targetPort must be between 1 and 65535" }
+    IntegerConstraint.PORT.validate("targetPort", port)
 }
 
 private fun validatePagination(count: Int, offset: Int) {
-    require(count > 0) { "count must be greater than 0" }
-    require(offset >= 0) { "offset must be 0 or greater" }
+    IntegerConstraint.POSITIVE.validate("count", count)
+    IntegerConstraint.NON_NEGATIVE.validate("offset", offset)
 }
 
 private fun validateRegex(regex: String) {
@@ -445,31 +447,11 @@ private fun validateRegex(regex: String) {
     }
 }
 
-private fun validateHttp2(pseudoHeaders: Map<String, String>, headers: Map<String, String>) {
-    val normalized = pseudoHeaders.mapKeys { it.key.removePrefix(":").lowercase() }
-    require(normalized.size == pseudoHeaders.size) { "pseudoHeaders must not contain duplicate names with and without ':'" }
-    require(normalized.keys.all { it in setOf("method", "scheme", "path", "authority", "protocol") }) {
-        "pseudoHeaders may only contain :method, :scheme, :path, :authority, and :protocol"
-    }
-    require(normalized.values.none(String::isBlank)) { "pseudoHeaders values must not be blank" }
-    require(headers.keys.none { it.startsWith(":") }) { "HTTP/2 pseudo-headers belong in pseudoHeaders, not headers" }
-    require(!normalized["method"].isNullOrBlank()) { "pseudoHeaders must include a non-blank :method" }
-    require(!normalized["authority"].isNullOrBlank()) { "pseudoHeaders must include a non-blank :authority" }
-
-    val extendedConnect = normalized["protocol"] != null
-    if (!normalized["method"].equals("CONNECT", ignoreCase = true) || extendedConnect) {
-        require(normalized["scheme"] in setOf("http", "https")) { "pseudoHeaders must include :scheme set to 'http' or 'https'" }
-        require(normalized["path"]?.let { it == "*" || it.startsWith("/") } == true) {
-            "pseudoHeaders must include :path starting with '/' (or '*')"
-        }
-    }
-}
-
 @Serializable
 data class SendHttp1Request(
     val content: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
 ) : HttpServiceParams {
     init { validateHttpService(targetHostname, targetPort) }
@@ -481,13 +463,10 @@ data class SendHttp2Request(
     val headers: Map<String, String>,
     val requestBody: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
 ) : HttpServiceParams {
-    init {
-        validateHttpService(targetHostname, targetPort)
-        validateHttp2(pseudoHeaders, headers)
-    }
+    init { validateHttpService(targetHostname, targetPort) }
 }
 
 @Serializable
@@ -495,7 +474,7 @@ data class CreateRepeaterTab(
     val tabName: String? = null,
     val content: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
 ) : HttpServiceParams {
     init { validateHttpService(targetHostname, targetPort) }
@@ -508,13 +487,10 @@ data class CreateRepeaterTabHttp2(
     val headers: Map<String, String>,
     val requestBody: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
 ) : HttpServiceParams {
-    init {
-        validateHttpService(targetHostname, targetPort)
-        validateHttp2(pseudoHeaders, headers)
-    }
+    init { validateHttpService(targetHostname, targetPort) }
 }
 
 @Serializable
@@ -522,7 +498,7 @@ data class SendToIntruder(
     val tabName: String? = null,
     val content: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
 ) : HttpServiceParams {
     init { validateHttpService(targetHostname, targetPort) }
@@ -541,9 +517,12 @@ data class Base64Encode(val content: String)
 data class Base64Decode(val content: String)
 
 @Serializable
-data class GenerateRandomString(val length: Int, val characterSet: String) {
+data class GenerateRandomString(
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) val length: Int,
+    val characterSet: String
+) {
     init {
-        require(length >= 0) { "length must be 0 or greater" }
+        IntegerConstraint.NON_NEGATIVE.validate("length", length)
         require(characterSet.isNotEmpty() || length == 0) { "characterSet must not be empty when length is greater than 0" }
     }
 }
@@ -564,17 +543,27 @@ data class SetProxyInterceptState(val intercepting: Boolean)
 data class SetActiveEditorContents(val text: String)
 
 @Serializable
-data class GetScannerIssues(override val count: Int, override val offset: Int) : Paginated {
+data class GetScannerIssues(
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
     init { validatePagination(count, offset) }
 }
 
 @Serializable
-data class GetProxyHttpHistory(override val count: Int, override val offset: Int) : Paginated {
+data class GetProxyHttpHistory(
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
     init { validatePagination(count, offset) }
 }
 
 @Serializable
-data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated {
+data class GetProxyHttpHistoryRegex(
+    val regex: String,
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
     init {
         validatePagination(count, offset)
         validateRegex(regex)
@@ -582,12 +571,19 @@ data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, 
 }
 
 @Serializable
-data class GetOrganizerItems(override val count: Int, override val offset: Int) : Paginated {
+data class GetOrganizerItems(
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
     init { validatePagination(count, offset) }
 }
 
 @Serializable
-data class GetOrganizerItemsRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated {
+data class GetOrganizerItemsRegex(
+    val regex: String,
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
     init {
         validatePagination(count, offset)
         validateRegex(regex)
@@ -595,13 +591,19 @@ data class GetOrganizerItemsRegex(val regex: String, override val count: Int, ov
 }
 
 @Serializable
-data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated {
+data class GetProxyWebsocketHistory(
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
     init { validatePagination(count, offset) }
 }
 
 @Serializable
-data class GetProxyWebsocketHistoryRegex(val regex: String, override val count: Int, override val offset: Int) :
-    Paginated {
+data class GetProxyWebsocketHistoryRegex(
+    val regex: String,
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
     init {
         validatePagination(count, offset)
         validateRegex(regex)

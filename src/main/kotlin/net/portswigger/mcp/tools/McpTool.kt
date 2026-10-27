@@ -15,8 +15,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.serializer
 import net.portswigger.mcp.schema.asInputSchema
 import kotlin.experimental.ExperimentalTypeInference
-import kotlin.reflect.KClass
-import kotlin.reflect.full.memberProperties
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.json.JsonNull
 
 @PublishedApi
 internal class McpToolException(message: String) : IllegalArgumentException(message)
@@ -27,34 +28,31 @@ fun mcpError(message: String): Nothing = throw McpToolException(message)
 internal val ToolJson = Json { ignoreUnknownKeys = true }
 
 @PublishedApi
-internal fun <I : Any> coerceWholeNumberArguments(arguments: JsonObject, inputClass: KClass<I>): JsonObject {
-    val integerProperties = inputClass.memberProperties
-        .filter { it.returnType.classifier == Int::class || it.returnType.classifier == Long::class }
-        .associate { it.name to it.returnType.classifier }
-
-    return JsonObject(arguments.mapValues { (name, value) ->
+internal fun coerceWholeNumberArguments(arguments: JsonObject, descriptor: SerialDescriptor): JsonObject =
+    JsonObject(arguments.mapValues { (name, value) ->
         val primitive = value as? JsonPrimitive
-        val classifier = integerProperties[name]
-        if (primitive == null || primitive.isString || classifier == null) return@mapValues value
+        val index = descriptor.getElementIndex(name)
+        if (primitive == null || primitive.isString || index < 0) return@mapValues value
+        val kind = descriptor.getElementDescriptor(index).kind
+        if (kind != PrimitiveKind.INT && kind != PrimitiveKind.LONG) return@mapValues value
+        if (primitive == JsonNull || primitive.content == "true" || primitive.content == "false") return@mapValues value
+        val range = if (kind == PrimitiveKind.INT) "${Int.MIN_VALUE}..${Int.MAX_VALUE}" else "${Long.MIN_VALUE}..${Long.MAX_VALUE}"
+        val message = "Expected a whole integer in $range at path: $.$name"
+        val decimal = primitive.content.toBigDecimalOrNull() ?: throw SerializationException(message)
 
-        val integer = primitive.content.toBigDecimalOrNull()?.let {
-            try { it.toBigIntegerExact() } catch (_: ArithmeticException) { null }
-        } ?: return@mapValues value
-
-        when (classifier) {
-            Int::class -> integer.toIntExactOrNull()?.let(::JsonPrimitive) ?: value
-            Long::class -> integer.toLongExactOrNull()?.let(::JsonPrimitive) ?: value
-            else -> value
+        try {
+            when (kind) {
+                PrimitiveKind.INT -> JsonPrimitive(decimal.intValueExact())
+                PrimitiveKind.LONG -> JsonPrimitive(decimal.longValueExact())
+            }
+        } catch (error: ArithmeticException) {
+            throw SerializationException(message, error)
         }
     })
-}
-
-private fun java.math.BigInteger.toIntExactOrNull() = try { intValueExact() } catch (_: ArithmeticException) { null }
-private fun java.math.BigInteger.toLongExactOrNull() = try { longValueExact() } catch (_: ArithmeticException) { null }
 
 @PublishedApi
 internal fun toolErrorResult(toolName: String, error: Exception): CallToolResult {
-    val detail = error.message?.substringBefore(" at path:") ?: error::class.simpleName ?: "unknown error"
+    val detail = error.message?.substringBefore("\nJSON input:") ?: error::class.simpleName ?: "unknown error"
     val message = when (error) {
         is McpToolException -> detail
         is SerializationException, is IllegalArgumentException ->
@@ -71,7 +69,7 @@ inline fun <reified I : Any> Server.mcpTool(
 ) {
     val toolName = I::class.simpleName?.toLowerSnakeCase() ?: error("Couldn't find name for ${I::class}")
     val serializer = I::class.serializer()
-    val inputSchema = I::class.asInputSchema()
+    val inputSchema = serializer.descriptor.asInputSchema()
 
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, request ->
         try {
@@ -81,7 +79,7 @@ inline fun <reified I : Any> Server.mcpTool(
                         serializer,
                         coerceWholeNumberArguments(
                             request.params.arguments ?: JsonObject(emptyMap()),
-                            I::class
+                            serializer.descriptor
                         )
                     )
                 ),

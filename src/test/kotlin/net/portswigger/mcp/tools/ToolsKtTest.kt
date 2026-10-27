@@ -182,16 +182,6 @@ class ToolsKtTest {
 
     @Test
     fun `invalid constrained arguments return actionable MCP errors`() = runBlocking {
-        val validHttp2 = mapOf(
-            "pseudoHeaders" to mapOf(
-                "method" to "GET", "scheme" to "https", "path" to "/", "authority" to "example.com"
-            ),
-            "headers" to emptyMap<String, String>(),
-            "requestBody" to "",
-            "targetHostname" to "example.com",
-            "targetPort" to 443,
-            "usesHttps" to true
-        )
         val cases = listOf(
             Triple(
                 "send_http1_request",
@@ -200,27 +190,7 @@ class ToolsKtTest {
             ),
             Triple("get_proxy_http_history", mapOf("count" to 0, "offset" to 0), "count must be greater than 0"),
             Triple("get_proxy_http_history", mapOf("count" to 1, "offset" to -1), "offset must be 0 or greater"),
-            Triple("get_proxy_http_history_regex", mapOf("regex" to "[", "count" to 1, "offset" to 0), "regex is invalid at index"),
-            Triple(
-                "send_http2_request",
-                validHttp2 + ("pseudoHeaders" to mapOf("method" to "GET", "scheme" to "https", "authority" to "example.com")),
-                "pseudoHeaders must include :path"
-            ),
-            Triple(
-                "send_http2_request",
-                validHttp2 + ("pseudoHeaders" to mapOf("scheme" to "https", "path" to "/", "authority" to "example.com")),
-                "pseudoHeaders must include a non-blank :method"
-            ),
-            Triple(
-                "send_http2_request",
-                validHttp2 + ("pseudoHeaders" to mapOf("method" to "GET", "scheme" to "https", "path" to "/")),
-                "pseudoHeaders must include a non-blank :authority"
-            ),
-            Triple(
-                "send_http2_request",
-                validHttp2 + ("headers" to mapOf(":path" to "/")),
-                "pseudo-headers belong in pseudoHeaders"
-            )
+            Triple("get_proxy_http_history_regex", mapOf("regex" to "[", "count" to 1, "offset" to 0), "regex is invalid at index")
         )
 
         cases.forEach { (tool, arguments, expected) ->
@@ -268,6 +238,32 @@ class ToolsKtTest {
 
     @Nested
     inner class HttpToolsTests {
+        @Test
+        fun `http2 request construction and failures are delegated to Montoya`() = runBlocking {
+            val headers = slot<List<HttpHeader>>()
+            every { HttpRequest.http2Request(any(), capture(headers), any<String>()) } throws
+                IllegalStateException("Montoya could not construct the test request")
+
+            val arguments = mapOf(
+                "pseudoHeaders" to mapOf("method" to "", "scheme" to "ftp", "path" to "relative", "custom" to "value"),
+                "headers" to mapOf(":protocol" to "test"),
+                "requestBody" to "",
+                "targetHostname" to "example.com",
+                "targetPort" to 443,
+                "usesHttps" to true
+            )
+            for (tool in listOf("send_http2_request", "create_repeater_tab_http2")) {
+                val result = client.callTool(tool, arguments)
+                assertTrue(result?.isError == true)
+                assertTrue(result.expectTextContent().contains("Montoya could not construct the test request"))
+                assertEquals(
+                    mapOf(":method" to "", ":scheme" to "ftp", ":path" to "relative", ":custom" to "value", ":protocol" to "test"),
+                    headers.captured.associate { it.name() to it.value() }
+                )
+            }
+            verify(exactly = 2) { HttpRequest.http2Request(any(), any(), any<String>()) }
+        }
+
         @Test
         fun `http1 line endings should be normalized`() {
             val httpService = mockk<Http>()
