@@ -15,6 +15,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
+import net.portswigger.mcp.schema.ConstrainedInteger
+import net.portswigger.mcp.schema.IntegerConstraint
 import net.portswigger.mcp.schema.encodeHistoryItem
 import net.portswigger.mcp.schema.toSerializableForm
 import net.portswigger.mcp.security.DataAccessSecurity
@@ -23,6 +25,7 @@ import net.portswigger.mcp.security.HttpRequestSecurity
 import net.portswigger.mcp.security.filterConfigCredentials
 import java.awt.KeyboardFocusManager
 import java.util.regex.Pattern
+import java.util.regex.PatternSyntaxException
 import javax.swing.JTextArea
 
 private suspend fun checkDataAccessOrDeny(
@@ -115,7 +118,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         val allowed = HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
-            return@mcpTool "Send HTTP request denied by Burp Suite"
+            mcpError("HTTP request to $targetHostname:$targetPort was denied in Burp Suite. Approve the target in Burp and retry.")
         }
 
         api.logging().logToOutput("MCP HTTP/1.1 request: $targetHostname:$targetPort")
@@ -126,7 +129,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         currentCoroutineContext().ensureActive()
         val response = api.http().sendRequest(request)
 
-        response?.toString() ?: "<no response>"
+        response?.toString() ?: mcpError("No HTTP response was received from $targetHostname:$targetPort. Check the target and Burp network settings.")
     }
 
     mcpTool<SendHttp2Request>("Issues an HTTP/2 request and returns the response. Do NOT pass headers to the body parameter.") {
@@ -147,7 +150,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         val allowed = HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, http2RequestDisplay, api)
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
-            return@mcpTool "Send HTTP request denied by Burp Suite"
+            mcpError("HTTP request to $targetHostname:$targetPort was denied in Burp Suite. Approve the target in Burp and retry.")
         }
 
         api.logging().logToOutput("MCP HTTP/2 request: $targetHostname:$targetPort")
@@ -158,7 +161,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         currentCoroutineContext().ensureActive()
         val response = api.http().sendRequest(request, HttpMode.HTTP_2)
 
-        response?.toString() ?: "<no response>"
+        response?.toString() ?: mcpError("No HTTP response was received from $targetHostname:$targetPort. Check the target and Burp network settings.")
     }
 
     mcpUnitTool<CreateRepeaterTab>("Creates an HTTP/1.1 Repeater tab with the specified raw HTTP request and optional tab name. Make sure to use carriage returns appropriately. Prefer create_repeater_tab_http2 for modern web targets that speak HTTP/2.") {
@@ -233,7 +236,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
             "Project configuration has been applied"
         } else {
-            toolingDisabledMessage
+            mcpError(toolingDisabledMessage)
         }
     }
 
@@ -245,7 +248,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
             "User configuration has been applied"
         } else {
-            toolingDisabledMessage
+            mcpError(toolingDisabledMessage)
         }
     }
 
@@ -299,7 +302,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     mcpPaginatedTool<GetProxyHttpHistory>("Displays items within the proxy HTTP history") {
         val allowed = checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
         if (!allowed) {
-            return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
+            mcpError("HTTP history access was denied in Burp Suite. Allow HTTP history access and retry.")
         }
 
         api.proxy().history().asSequence().map { encodeHistoryItem(it.toSerializableForm()) }
@@ -308,7 +311,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
         val allowed = checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
         if (!allowed) {
-            return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
+            mcpError("HTTP history access was denied in Burp Suite. Allow HTTP history access and retry.")
         }
 
         val compiledRegex = Pattern.compile(regex)
@@ -319,7 +322,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
         val allowed = checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
         if (!allowed) {
-            return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
+            mcpError("Organizer access was denied in Burp Suite. Allow Organizer access and retry.")
         }
 
         api.organizer().items().asSequence().map { encodeHistoryItem(it.toSerializableForm()) }
@@ -328,7 +331,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     mcpPaginatedTool<GetOrganizerItemsRegex>("Displays items matching a specified regex within the Organizer tab") {
         val allowed = checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
         if (!allowed) {
-            return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
+            mcpError("Organizer access was denied in Burp Suite. Allow Organizer access and retry.")
         }
 
         val compiledRegex = Pattern.compile(regex)
@@ -339,7 +342,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
         val allowed = checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
         if (!allowed) {
-            return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
+            mcpError("WebSocket history access was denied in Burp Suite. Allow WebSocket history access and retry.")
         }
 
         api.proxy().webSocketHistory().asSequence()
@@ -349,7 +352,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     mcpPaginatedTool<GetProxyWebsocketHistoryRegex>("Displays items matching a specified regex within the proxy WebSocket history") {
         val allowed = checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
         if (!allowed) {
-            return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
+            mcpError("WebSocket history access was denied in Burp Suite. Allow WebSocket history access and retry.")
         }
 
         val compiledRegex = Pattern.compile(regex)
@@ -374,14 +377,14 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpTool("get_active_editor_contents", "Outputs the contents of the user's active message editor") {
-        getActiveEditor(api)?.text ?: "<No active editor>"
+        getActiveEditor(api)?.text ?: mcpError("No Burp message editor is active. Focus a request or response editor and retry.")
     }
 
     mcpTool<SetActiveEditorContents>("Sets the content of the user's active message editor") {
-        val editor = getActiveEditor(api) ?: return@mcpTool "<No active editor>"
+        val editor = getActiveEditor(api) ?: mcpError("No Burp message editor is active. Focus an editable request editor and retry.")
 
         if (!editor.isEditable) {
-            return@mcpTool "<Current editor is not editable>"
+            mcpError("The active Burp message editor is read-only. Focus an editable request editor and retry.")
         }
 
         editor.text = text
@@ -413,13 +416,33 @@ interface HttpServiceParams {
     fun toMontoyaService(): HttpService = HttpService.httpService(targetHostname, targetPort, usesHttps)
 }
 
+private fun validateHttpService(hostname: String, port: Int) {
+    require(hostname.isNotBlank()) { "targetHostname must not be blank" }
+    IntegerConstraint.PORT.validate("targetPort", port)
+}
+
+private fun validatePagination(count: Int, offset: Int) {
+    IntegerConstraint.POSITIVE.validate("count", count)
+    IntegerConstraint.NON_NEGATIVE.validate("offset", offset)
+}
+
+private fun validateRegex(regex: String) {
+    try {
+        Pattern.compile(regex)
+    } catch (error: PatternSyntaxException) {
+        throw IllegalArgumentException("regex is invalid at index ${error.index}: ${error.description}")
+    }
+}
+
 @Serializable
 data class SendHttp1Request(
     val content: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
-) : HttpServiceParams
+) : HttpServiceParams {
+    init { validateHttpService(targetHostname, targetPort) }
+}
 
 @Serializable
 data class SendHttp2Request(
@@ -427,38 +450,46 @@ data class SendHttp2Request(
     val headers: Map<String, String>,
     val requestBody: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
-) : HttpServiceParams
+) : HttpServiceParams {
+    init { validateHttpService(targetHostname, targetPort) }
+}
 
 @Serializable
 data class CreateRepeaterTab(
-    val tabName: String?,
+    val tabName: String? = null,
     val content: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
-) : HttpServiceParams
+) : HttpServiceParams {
+    init { validateHttpService(targetHostname, targetPort) }
+}
 
 @Serializable
 data class CreateRepeaterTabHttp2(
-    val tabName: String?,
+    val tabName: String? = null,
     val pseudoHeaders: Map<String, String>,
     val headers: Map<String, String>,
     val requestBody: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
-) : HttpServiceParams
+) : HttpServiceParams {
+    init { validateHttpService(targetHostname, targetPort) }
+}
 
 @Serializable
 data class SendToIntruder(
-    val tabName: String?,
+    val tabName: String? = null,
     val content: String,
     override val targetHostname: String,
-    override val targetPort: Int,
+    @ConstrainedInteger(IntegerConstraint.PORT) override val targetPort: Int,
     override val usesHttps: Boolean
-) : HttpServiceParams
+) : HttpServiceParams {
+    init { validateHttpService(targetHostname, targetPort) }
+}
 
 @Serializable
 data class UrlEncode(val content: String)
@@ -473,7 +504,15 @@ data class Base64Encode(val content: String)
 data class Base64Decode(val content: String)
 
 @Serializable
-data class GenerateRandomString(val length: Int, val characterSet: String)
+data class GenerateRandomString(
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) val length: Int,
+    val characterSet: String
+) {
+    init {
+        IntegerConstraint.NON_NEGATIVE.validate("length", length)
+        require(characterSet.isNotEmpty() || length == 0) { "characterSet must not be empty when length is greater than 0" }
+    }
+}
 
 @Serializable
 data class SetProjectOptions(val json: String)
@@ -491,26 +530,72 @@ data class SetProxyInterceptState(val intercepting: Boolean)
 data class SetActiveEditorContents(val text: String)
 
 @Serializable
-data class GetScannerIssues(override val count: Int, override val offset: Int) : Paginated
+data class GetScannerIssues(
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
+    init { validatePagination(count, offset) }
+}
 
 @Serializable
-data class GetProxyHttpHistory(override val count: Int, override val offset: Int) : Paginated
+data class GetProxyHttpHistory(
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
+    init { validatePagination(count, offset) }
+}
 
 @Serializable
-data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+data class GetProxyHttpHistoryRegex(
+    val regex: String,
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
+    init {
+        validatePagination(count, offset)
+        validateRegex(regex)
+    }
+}
 
 @Serializable
-data class GetOrganizerItems(override val count: Int, override val offset: Int) : Paginated
+data class GetOrganizerItems(
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
+    init { validatePagination(count, offset) }
+}
 
 @Serializable
-data class GetOrganizerItemsRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+data class GetOrganizerItemsRegex(
+    val regex: String,
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
+    init {
+        validatePagination(count, offset)
+        validateRegex(regex)
+    }
+}
 
 @Serializable
-data class GetProxyWebsocketHistory(override val count: Int, override val offset: Int) : Paginated
+data class GetProxyWebsocketHistory(
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
+    init { validatePagination(count, offset) }
+}
 
 @Serializable
-data class GetProxyWebsocketHistoryRegex(val regex: String, override val count: Int, override val offset: Int) :
-    Paginated
+data class GetProxyWebsocketHistoryRegex(
+    val regex: String,
+    @ConstrainedInteger(IntegerConstraint.POSITIVE) override val count: Int,
+    @ConstrainedInteger(IntegerConstraint.NON_NEGATIVE) override val offset: Int
+) : Paginated {
+    init {
+        validatePagination(count, offset)
+        validateRegex(regex)
+    }
+}
 
 @Serializable
 data class GenerateCollaboratorPayload(
