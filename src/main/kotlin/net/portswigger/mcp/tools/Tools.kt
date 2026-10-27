@@ -8,13 +8,20 @@ import burp.api.montoya.core.BurpSuiteEdition
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
+import burp.api.montoya.http.message.HttpRequestResponse
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.http.message.responses.HttpResponse
+import burp.api.montoya.scanner.audit.issues.AuditIssue
+import burp.api.montoya.scanner.audit.issues.AuditIssueConfidence as MontoyaAuditIssueConfidence
+import burp.api.montoya.scanner.audit.issues.AuditIssueSeverity as MontoyaAuditIssueSeverity
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
+import net.portswigger.mcp.schema.AuditIssueConfidence
+import net.portswigger.mcp.schema.AuditIssueSeverity
 import net.portswigger.mcp.schema.encodeHistoryItem
 import net.portswigger.mcp.schema.toSerializableForm
 import net.portswigger.mcp.security.DataAccessSecurity
@@ -252,6 +259,38 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     if (api.burpSuite().version().edition() == BurpSuiteEdition.PROFESSIONAL) {
         mcpPaginatedTool<GetScannerIssues>("Displays information about issues identified by the scanner") {
             api.siteMap().issues().asSequence().map { Json.encodeToString(it.toSerializableForm()) }
+        }
+
+        mcpTool<CreateScanIssue>(
+            "Creates a custom Scanner (audit) issue from a supplied HTTP request and optional response, and adds it to Burp's site map/Issues. " +
+            "Useful for reporting manually-identified findings as Burp Scanner issues."
+        ) {
+            val fixedContent = normalizeHttpContent(content)
+            val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
+            val response = responseContent?.let { HttpResponse.httpResponse(normalizeHttpContent(it)) }
+            val requestResponse = HttpRequestResponse.httpRequestResponse(request, response)
+
+            val issueSeverity = MontoyaAuditIssueSeverity.valueOf(severity.name)
+            val issueConfidence = MontoyaAuditIssueConfidence.valueOf(confidence.name)
+            val issueBaseUrl = baseUrl ?: request.url()
+
+            val issue = AuditIssue.auditIssue(
+                name,
+                detail,
+                remediation,
+                issueBaseUrl,
+                issueSeverity,
+                issueConfidence,
+                background,
+                remediationBackground,
+                issueSeverity,
+                requestResponse
+            )
+
+            api.siteMap().add(issue)
+            api.logging().logToOutput("MCP created scan issue '$name' ($severity/$confidence) at $issueBaseUrl")
+
+            "Scan issue '$name' created at $issueBaseUrl"
         }
 
         val collaboratorClient by lazy { api.collaborator().createClient() }
@@ -492,6 +531,23 @@ data class SetActiveEditorContents(val text: String)
 
 @Serializable
 data class GetScannerIssues(override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class CreateScanIssue(
+    val name: String,
+    val detail: String,
+    val remediation: String? = null,
+    val severity: AuditIssueSeverity,
+    val confidence: AuditIssueConfidence,
+    val content: String,
+    val responseContent: String? = null,
+    val baseUrl: String? = null,
+    val background: String? = null,
+    val remediationBackground: String? = null,
+    override val targetHostname: String,
+    override val targetPort: Int,
+    override val usesHttps: Boolean
+) : HttpServiceParams
 
 @Serializable
 data class GetProxyHttpHistory(override val count: Int, override val offset: Int) : Paginated
