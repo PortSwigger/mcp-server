@@ -9,6 +9,12 @@ import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
+import burp.api.montoya.scanner.AuditConfiguration
+import burp.api.montoya.scanner.BuiltInAuditConfiguration
+import burp.api.montoya.scanner.BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS
+import burp.api.montoya.scanner.CrawlConfiguration
+import burp.api.montoya.scanner.ScanTask
+import burp.api.montoya.sitemap.SiteMapFilter
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -22,6 +28,9 @@ import net.portswigger.mcp.security.DataAccessType
 import net.portswigger.mcp.security.HttpRequestSecurity
 import net.portswigger.mcp.security.filterConfigCredentials
 import java.awt.KeyboardFocusManager
+import java.net.URI
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
 import javax.swing.JTextArea
 
@@ -108,6 +117,21 @@ private fun normalizePrelude(prelude: String): String = prelude
     .replace("\\r", "")        // Remaining literal \r → remove
     .replace("\r", "")          // Actual CR → remove
     .replace("\n", "\r\n")      // All LF → proper CRLF
+
+// Montoya scan tasks carry no identifier, so tasks started via MCP are tracked by a generated ID.
+// Held at extension scope so IDs stay valid across MCP server restarts.
+private class TrackedScan(val task: ScanTask, val siteMapPrefixes: List<String>)
+
+private val scans = ConcurrentHashMap<String, TrackedScan>()
+
+private fun trackedScan(scanId: String): TrackedScan = scans[scanId]
+    ?: throw IllegalArgumentException("Unknown scanId '$scanId'. Only scans started with start_scan are tracked")
+
+// Scheme, host, port and path of a URL, without query or fragment, for matching site map entries.
+internal fun siteMapPrefix(url: String): String {
+    val uri = URI(url)
+    return URI(uri.scheme, uri.authority, uri.path.ifEmpty { "/" }, null, null).toString()
+}
 
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
@@ -293,6 +317,101 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
                     Json.encodeToString(it.toSerializableForm())
                 }
             }
+        }
+
+        fun scanStatusJson(scanId: String, scan: TrackedScan): String {
+            val filters = scan.siteMapPrefixes.map { SiteMapFilter.prefixFilter(it) }
+            val siteMapItemCount = filters.sumOf { api.siteMap().requestResponses(it).size }
+            val issues = filters.flatMap { api.siteMap().issues(it) }
+            return Json.encodeToString(scan.task.toSerializableForm(scanId, siteMapItemCount, issues))
+        }
+
+        mcpTool<StartScan>(
+            "Starts a Burp Scanner task and returns its status, including a scanId for scan_status and scan_delete. " +
+            "scanType 'audit' (default) audits each URL plus every request already in the site map under it " +
+            "(same scheme, host, port and path prefix; query strings are ignored), so passing a site root audits " +
+            "everything Burp knows about that site. Run a crawl first to populate the site map. " +
+            "builtInConfig: LEGACY_ACTIVE_AUDIT_CHECKS (default) or LEGACY_PASSIVE_AUDIT_CHECKS. " +
+            "scanType 'crawl' crawls using the URLs as seeds. " +
+            "Audits stay in Burp's task list after finishing; use scan_delete to remove them. " +
+            "Only scan targets you are authorized to test."
+        ) {
+            val type = scanType ?: "audit"
+            require(urls.isNotEmpty()) { "urls must contain at least one URL" }
+            require(type == "audit" || type == "crawl") { "Unknown scanType '$type'. Expected 'audit' or 'crawl'" }
+            require(type == "audit" || builtInConfig == null) { "builtInConfig only applies to audit scans" }
+
+            val auditConfig = builtInConfig?.let { name ->
+                BuiltInAuditConfiguration.entries.find { it.name.equals(name, ignoreCase = true) }
+                    ?: throw IllegalArgumentException(
+                        "Unknown builtInConfig '$name'. Expected one of: ${BuiltInAuditConfiguration.entries.joinToString()}"
+                    )
+            } ?: LEGACY_ACTIVE_AUDIT_CHECKS
+
+            val requests = urls.map { HttpRequest.httpRequestFromUrl(it) }
+            val allowed = runBlocking {
+                requests.distinctBy { it.httpService().host() to it.httpService().port() }.all {
+                    HttpRequestSecurity.checkHttpRequestPermission(
+                        it.httpService().host(), it.httpService().port(), config, it.toString(), api
+                    )
+                }
+            }
+            if (!allowed) {
+                api.logging().logToOutput("MCP scan denied: ${urls.joinToString()}")
+                return@mcpTool "Scan denied by Burp Suite"
+            }
+
+            // Drop prefixes covered by a shorter one so site map entries are not audited or counted twice
+            val prefixes = urls.map(::siteMapPrefix).distinct().let { all ->
+                all.filter { prefix -> all.none { it != prefix && prefix.startsWith(it) } }
+            }
+
+            val scanId = UUID.randomUUID().toString()
+            val scan = if (type == "audit") {
+                val siteMapItems = prefixes.flatMap { api.siteMap().requestResponses(SiteMapFilter.prefixFilter(it)) }
+                val extraRequests = requests.filter { request -> siteMapItems.none { it.request().url() == request.url() } }
+
+                api.logging().logToOutput(
+                    "MCP starting audit of ${siteMapItems.size + extraRequests.size} requests under: ${prefixes.joinToString()}"
+                )
+                val audit = api.scanner().startAudit(AuditConfiguration.auditConfiguration(auditConfig))
+                // Track before adding requests so the audit can still be deleted if adding fails
+                TrackedScan(audit, prefixes).also { scans[scanId] = it }.apply {
+                    // Site map entries that were never requested have no response, which addRequestResponse rejects
+                    siteMapItems.forEach {
+                        if (it.response() != null) audit.addRequestResponse(it) else audit.addRequest(it.request())
+                    }
+                    extraRequests.forEach { audit.addRequest(it) }
+                }
+            } else {
+                api.logging().logToOutput("MCP starting crawl: ${urls.joinToString()}")
+                val crawl = api.scanner().startCrawl(CrawlConfiguration.crawlConfiguration(*urls.toTypedArray()))
+                TrackedScan(crawl, prefixes).also { scans[scanId] = it }
+            }
+
+            scanStatusJson(scanId, scan)
+        }
+
+        mcpTool<ScanStatus>(
+            "Reports the progress of a scan started by start_scan: status message, request and error counts, " +
+            "insertion point count for audits, and for the site map under the scanned URLs the number of entries " +
+            "and the issue counts by severity (both include results from other scans). " +
+            "Use get_scanner_issues for issue details. Burp does not currently report request counts or a status " +
+            "message for crawls, so track crawl progress with siteMapItemCount."
+        ) {
+            scanStatusJson(scanId, trackedScan(scanId))
+        }
+
+        mcpTool<ScanDelete>(
+            "Stops a scan started by start_scan and deletes it from Burp's task list; Burp's extension API cannot " +
+            "stop a scan without deleting it. Issues the scan found stay in the site map and get_scanner_issues. " +
+            "Unlike set_task_execution_engine_state, other tasks are not affected."
+        ) {
+            trackedScan(scanId).task.delete()
+            scans.remove(scanId)
+            api.logging().logToOutput("MCP deleted scan: $scanId")
+
+            "Scan $scanId has been stopped and deleted. Issues it found remain in the site map"
         }
     }
 
@@ -521,3 +640,16 @@ data class GenerateCollaboratorPayload(
 data class GetCollaboratorInteractions(
     val payloadId: String? = null
 )
+
+@Serializable
+data class StartScan(
+    val urls: List<String>,
+    val scanType: String? = null,
+    val builtInConfig: String? = null
+)
+
+@Serializable
+data class ScanStatus(val scanId: String)
+
+@Serializable
+data class ScanDelete(val scanId: String)

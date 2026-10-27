@@ -14,6 +14,16 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import burp.api.montoya.proxy.Proxy
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
+import burp.api.montoya.scanner.AuditConfiguration
+import burp.api.montoya.scanner.BuiltInAuditConfiguration
+import burp.api.montoya.scanner.Crawl
+import burp.api.montoya.scanner.CrawlConfiguration
+import burp.api.montoya.scanner.Scanner
+import burp.api.montoya.scanner.audit.Audit
+import burp.api.montoya.scanner.audit.issues.AuditIssue
+import burp.api.montoya.scanner.audit.issues.AuditIssueSeverity
+import burp.api.montoya.sitemap.SiteMap
+import burp.api.montoya.sitemap.SiteMapFilter
 import burp.api.montoya.utilities.Base64Utils
 import burp.api.montoya.utilities.RandomUtils
 import burp.api.montoya.utilities.URLUtils
@@ -27,7 +37,9 @@ import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import net.portswigger.mcp.KtorServerManager
@@ -36,12 +48,15 @@ import net.portswigger.mcp.TestSseMcpClient
 import net.portswigger.mcp.config.McpConfig
 import net.portswigger.mcp.schema.HttpRequestResponse
 import net.portswigger.mcp.schema.toSerializableForm
+import net.portswigger.mcp.security.HttpRequestSecurity
+import net.portswigger.mcp.security.UserApprovalHandler
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.net.ServerSocket
+import java.net.URI
 import javax.swing.JTextArea
 
 class ToolsKtTest {
@@ -1056,6 +1071,325 @@ class ToolsKtTest {
         }
     }
 
+    @Nested
+    inner class ScannerToolsTests {
+        private val scanner = mockk<Scanner>()
+        private val auditConfiguration = mockk<AuditConfiguration>()
+        private val crawlConfiguration = mockk<CrawlConfiguration>()
+        private val siteMap = mockk<SiteMap>()
+        private val prefixFilters = mutableMapOf<String, SiteMapFilter>()
+
+        private fun prefixFilter(prefix: String) = prefixFilters.getOrPut(prefix) { mockk() }
+
+        @BeforeEach
+        fun setupScanner() {
+            mockkStatic(AuditConfiguration::class, CrawlConfiguration::class, SiteMapFilter::class)
+
+            every { api.siteMap() } returns siteMap
+            every { SiteMapFilter.prefixFilter(any()) } answers { prefixFilter(firstArg()) }
+            every { siteMap.requestResponses(any()) } returns emptyList()
+            every { siteMap.issues(any()) } returns emptyList()
+
+            val burpSuite = mockk<burp.api.montoya.burpsuite.BurpSuite>(relaxed = true)
+            val version = mockk<burp.api.montoya.core.Version>()
+            every { api.burpSuite() } returns burpSuite
+            every { burpSuite.version() } returns version
+            every { version.edition() } returns BurpSuiteEdition.PROFESSIONAL
+
+            every { api.scanner() } returns scanner
+            every { AuditConfiguration.auditConfiguration(any()) } returns auditConfiguration
+            every { CrawlConfiguration.crawlConfiguration(*anyVararg()) } returns crawlConfiguration
+            every { HttpRequest.httpRequestFromUrl(any()) } answers { mockRequest(firstArg()) }
+
+            serverManager.stop {}
+            serverStarted = false
+            serverManager.start(config) { state ->
+                if (state is ServerState.Running) serverStarted = true
+            }
+
+            runBlocking {
+                var attempts = 0
+                while (!serverStarted && attempts < 30) {
+                    delay(100)
+                    attempts++
+                }
+                if (!serverStarted) throw IllegalStateException("Server failed to start after timeout")
+                client.connectToServer("http://127.0.0.1:${testPort}")
+            }
+        }
+
+        @AfterEach
+        fun cleanupScanner() {
+            unmockkStatic(AuditConfiguration::class, CrawlConfiguration::class, SiteMapFilter::class)
+        }
+
+        private fun mockRequest(url: String): HttpRequest {
+            val uri = URI(url)
+            val service = mockk<burp.api.montoya.http.HttpService>().also {
+                every { it.host() } returns uri.host
+                every { it.port() } returns if (uri.port > 0) uri.port else 443
+            }
+            return mockk<HttpRequest>().also {
+                every { it.httpService() } returns service
+                every { it.url() } returns url
+                every { it.toString() } returns "GET ${uri.path} HTTP/1.1\r\nHost: ${uri.host}\r\n\r\n"
+            }
+        }
+
+        private fun mockSiteMapItem(url: String, requested: Boolean = true) =
+            mockk<burp.api.montoya.http.message.HttpRequestResponse>().also {
+                every { it.request() } returns mockRequest(url)
+                every { it.response() } returns if (requested) mockk() else null
+            }
+
+        private fun mockIssue(severity: AuditIssueSeverity) = mockk<AuditIssue>().also {
+            every { it.severity() } returns severity
+        }
+
+        private fun mockAudit() = mockk<Audit>(relaxed = true).also { audit ->
+            every { audit.statusMessage() } returns "Auditing"
+            every { audit.requestCount() } returns 42
+            every { audit.errorCount() } returns 1
+            every { audit.insertionPointCount() } returns 7
+        }
+
+        private suspend fun callStartScan(vararg args: Pair<String, Any>) = client.callTool(
+            "start_scan", mapOf(*args).mapValues { (_, value) ->
+                if (value is List<*>) Json.encodeToJsonElement(value.map { it.toString() }) else value
+            }
+        )
+
+        private suspend fun startScanId(vararg args: Pair<String, Any>): String {
+            val text = callStartScan(*args).expectTextContent()
+            return Json.parseToJsonElement(text).jsonObject.getValue("scanId").jsonPrimitive.content
+        }
+
+        @Test
+        fun `start scan should audit site map under each url and report status`() {
+            val audit = mockAudit()
+            every { scanner.startAudit(auditConfiguration) } returns audit
+            val aFilter = prefixFilter("https://a.example/x")
+            val bFilter = prefixFilter("https://b.example/")
+            val knownItems = listOf(mockSiteMapItem("https://a.example/x?id=1"), mockSiteMapItem("https://a.example/x/y"))
+            val aIssues = listOf(mockIssue(AuditIssueSeverity.HIGH), mockIssue(AuditIssueSeverity.HIGH))
+            val bIssues = listOf(mockIssue(AuditIssueSeverity.LOW))
+            every { siteMap.requestResponses(aFilter) } returns knownItems
+            every { siteMap.issues(aFilter) } returns aIssues
+            every { siteMap.issues(bFilter) } returns bIssues
+
+            runBlocking {
+                val scanId = startScanId("urls" to listOf("https://a.example/x?id=1", "https://b.example"))
+                assertTrue(scanId.isNotBlank())
+
+                val status = Json.parseToJsonElement(
+                    client.callTool("scan_status", mapOf("scanId" to scanId)).expectTextContent()
+                ).jsonObject
+                assertEquals(scanId, status.getValue("scanId").jsonPrimitive.content)
+                assertEquals("audit", status.getValue("type").jsonPrimitive.content)
+                assertEquals("Auditing", status.getValue("statusMessage").jsonPrimitive.content)
+                assertEquals(42, status.getValue("requestCount").jsonPrimitive.int)
+                assertEquals(1, status.getValue("errorCount").jsonPrimitive.int)
+                assertEquals(7, status.getValue("insertionPointCount").jsonPrimitive.int)
+                assertEquals(2, status.getValue("siteMapItemCount").jsonPrimitive.int)
+                val issueCounts = status.getValue("issueCounts").jsonObject
+                assertEquals(2, issueCounts.getValue("HIGH").jsonPrimitive.int)
+                assertEquals(1, issueCounts.getValue("LOW").jsonPrimitive.int)
+            }
+
+            verify(exactly = 1) {
+                AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_ACTIVE_AUDIT_CHECKS)
+            }
+            knownItems.forEach { verify(exactly = 1) { audit.addRequestResponse(it) } }
+            // a.example/x?id=1 is already in the site map, so only b.example is added as a bare request
+            val addedRequest = slot<HttpRequest>()
+            verify(exactly = 1) { audit.addRequest(capture(addedRequest)) }
+            assertEquals("https://b.example", addedRequest.captured.url())
+        }
+
+        @Test
+        fun `start scan should not cover nested urls twice`() {
+            val audit = mockAudit()
+            every { scanner.startAudit(auditConfiguration) } returns audit
+            val rootFilter = prefixFilter("https://a.example/")
+            val requested = mockSiteMapItem("https://a.example/")
+            val unrequested = mockSiteMapItem("https://a.example/app", requested = false)
+            val unrequestedRequest = unrequested.request()
+            every { siteMap.requestResponses(rootFilter) } returns listOf(requested, unrequested)
+
+            runBlocking {
+                startScanId("urls" to listOf("https://a.example/", "https://a.example/app"))
+            }
+
+            verify(exactly = 0) { SiteMapFilter.prefixFilter("https://a.example/app") }
+            // Entries without a response are audited as bare requests
+            verify(exactly = 1) { audit.addRequestResponse(requested) }
+            verify(exactly = 1) { audit.addRequest(unrequestedRequest) }
+            verify(exactly = 0) { audit.addRequestResponse(unrequested) }
+        }
+
+        @Test
+        fun `start scan should use requested built in audit configuration`() {
+            every { scanner.startAudit(auditConfiguration) } returns mockAudit()
+
+            runBlocking {
+                startScanId(
+                    "urls" to listOf("https://a.example/"),
+                    "builtInConfig" to "legacy_passive_audit_checks"
+                )
+            }
+
+            verify(exactly = 1) {
+                AuditConfiguration.auditConfiguration(BuiltInAuditConfiguration.LEGACY_PASSIVE_AUDIT_CHECKS)
+            }
+        }
+
+        @Test
+        fun `start scan crawl should seed crawl with urls`() {
+            val crawl = mockk<Crawl>(relaxed = true).also {
+                every { it.statusMessage() } returns "Crawling"
+                every { it.requestCount() } returns 3
+            }
+            every { scanner.startCrawl(crawlConfiguration) } returns crawl
+            val rootFilter = prefixFilter("https://a.example/")
+
+            runBlocking {
+                val text = callStartScan(
+                    "urls" to listOf("https://a.example/", "https://a.example/app"),
+                    "scanType" to "crawl"
+                ).expectTextContent()
+
+                val status = Json.parseToJsonElement(text).jsonObject
+                val scanId = status.getValue("scanId").jsonPrimitive.content
+                assertEquals("crawl", status.getValue("type").jsonPrimitive.content)
+                assertEquals(3, status.getValue("requestCount").jsonPrimitive.int)
+                assertEquals(JsonNull, status.getValue("insertionPointCount"))
+                assertEquals(0, status.getValue("siteMapItemCount").jsonPrimitive.int)
+                assertTrue(status.getValue("issueCounts").jsonObject.isEmpty())
+
+                // The crawl discovers content, so later status calls see a larger site map
+                val discovered = listOf(mockSiteMapItem("https://a.example/"), mockSiteMapItem("https://a.example/app"))
+                every { siteMap.requestResponses(rootFilter) } returns discovered
+                val later = Json.parseToJsonElement(
+                    client.callTool("scan_status", mapOf("scanId" to scanId)).expectTextContent()
+                ).jsonObject
+                assertEquals(2, later.getValue("siteMapItemCount").jsonPrimitive.int)
+            }
+
+            verify(exactly = 1) {
+                CrawlConfiguration.crawlConfiguration("https://a.example/", "https://a.example/app")
+            }
+            verify(exactly = 0) { scanner.startAudit(any()) }
+        }
+
+        @Test
+        fun `scan status should report unsupported task getters as null`() {
+            val audit = mockAudit().also {
+                every { it.requestCount() } throws UnsupportedOperationException("Currently unsupported.")
+                every { it.insertionPointCount() } throws UnsupportedOperationException("Currently unsupported.")
+            }
+            every { scanner.startAudit(auditConfiguration) } returns audit
+
+            runBlocking {
+                val text = callStartScan("urls" to listOf("https://a.example/")).expectTextContent()
+
+                val status = Json.parseToJsonElement(text).jsonObject
+                assertTrue(status.getValue("scanId").jsonPrimitive.content.isNotBlank())
+                assertEquals(JsonNull, status.getValue("requestCount"))
+                assertEquals(JsonNull, status.getValue("insertionPointCount"))
+                assertEquals(1, status.getValue("errorCount").jsonPrimitive.int)
+            }
+        }
+
+        @Test
+        fun `start scan should reject invalid arguments`() {
+            runBlocking {
+                listOf(
+                    arrayOf<Pair<String, Any>>("urls" to emptyList<String>()) to "urls must contain at least one URL",
+                    arrayOf<Pair<String, Any>>("urls" to listOf("https://a.example/"), "scanType" to "crawl_and_audit")
+                            to "Unknown scanType 'crawl_and_audit'",
+                    arrayOf<Pair<String, Any>>("urls" to listOf("https://a.example/"), "builtInConfig" to "everything")
+                            to "Unknown builtInConfig 'everything'",
+                    arrayOf<Pair<String, Any>>(
+                        "urls" to listOf("https://a.example/"),
+                        "scanType" to "crawl",
+                        "builtInConfig" to "LEGACY_ACTIVE_AUDIT_CHECKS"
+                    ) to "builtInConfig only applies to audit scans"
+                ).forEach { (args, expectedError) ->
+                    val result = callStartScan(*args)
+                    assertEquals(true, result?.isError)
+                    assertTrue(result.expectTextContent().contains(expectedError))
+                }
+            }
+
+            verify { scanner wasNot Called }
+        }
+
+        @Test
+        fun `start scan should ask approval once per target and respect denial`() {
+            val originalHandler = HttpRequestSecurity.approvalHandler
+            val approvalHandler = mockk<UserApprovalHandler>()
+            coEvery { approvalHandler.requestApproval("a.example", any(), any(), any(), any()) } returns true
+            coEvery { approvalHandler.requestApproval("b.example", any(), any(), any(), any()) } returns false
+            HttpRequestSecurity.approvalHandler = approvalHandler
+            every { config.requireHttpRequestApproval } returns true
+
+            try {
+                runBlocking {
+                    callStartScan(
+                        "urls" to listOf("https://a.example/x", "https://a.example/y", "https://b.example/")
+                    ).expectTextContent("Scan denied by Burp Suite")
+                }
+            } finally {
+                HttpRequestSecurity.approvalHandler = originalHandler
+            }
+
+            coVerify(exactly = 1) { approvalHandler.requestApproval("a.example", 443, config, any(), any()) }
+            coVerify(exactly = 1) { approvalHandler.requestApproval("b.example", 443, config, any(), any()) }
+            verify { scanner wasNot Called }
+        }
+
+        @Test
+        fun `scan delete should delete only that scan`() {
+            val deleted = mockAudit()
+            val running = mockAudit()
+            every { scanner.startAudit(auditConfiguration) } returnsMany listOf(deleted, running)
+
+            runBlocking {
+                val deletedId = startScanId("urls" to listOf("https://a.example/"))
+                val runningId = startScanId("urls" to listOf("https://b.example/"))
+
+                client.callTool("scan_delete", mapOf("scanId" to deletedId))
+                    .expectTextContent("Scan $deletedId has been stopped and deleted. Issues it found remain in the site map")
+
+                val status = client.callTool("scan_status", mapOf("scanId" to deletedId))
+                assertEquals(true, status?.isError)
+                assertTrue(status.expectTextContent().contains("Unknown scanId"))
+
+                assertNotEquals(true, client.callTool("scan_status", mapOf("scanId" to runningId))?.isError)
+            }
+
+            verify(exactly = 1) { deleted.delete() }
+            verify(exactly = 0) { running.delete() }
+        }
+
+        @Test
+        fun `scan status and delete should reject unknown scan id`() {
+            runBlocking {
+                listOf("scan_status", "scan_delete").forEach { tool ->
+                    val result = client.callTool(tool, mapOf("scanId" to "does-not-exist"))
+                    assertEquals(true, result?.isError)
+                    assertTrue(result.expectTextContent().contains("Unknown scanId 'does-not-exist'"))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `site map prefix should drop query and default the path`() {
+        assertEquals("https://a.example/x", siteMapPrefix("https://a.example/x?id=1#top"))
+        assertEquals("http://127.0.0.1:3000/", siteMapPrefix("http://127.0.0.1:3000"))
+    }
+
     @Test
     fun `tool name conversion should work properly`() {
         assertEquals("send_http1_request", "SendHttp1Request".toLowerSnakeCase())
@@ -1077,6 +1411,9 @@ class ToolsKtTest {
             assertFalse(tools.any { it.name == "get_scanner_issues" })
             assertFalse(tools.any { it.name == "generate_collaborator_payload" })
             assertFalse(tools.any { it.name == "get_collaborator_interactions" })
+            assertFalse(tools.any { it.name == "start_scan" })
+            assertFalse(tools.any { it.name == "scan_status" })
+            assertFalse(tools.any { it.name == "scan_delete" })
         }
 
         every { version.edition() } returns BurpSuiteEdition.PROFESSIONAL
@@ -1101,6 +1438,9 @@ class ToolsKtTest {
             assertTrue(tools.any { it.name == "get_scanner_issues" })
             assertTrue(tools.any { it.name == "generate_collaborator_payload" })
             assertTrue(tools.any { it.name == "get_collaborator_interactions" })
+            assertTrue(tools.any { it.name == "start_scan" })
+            assertTrue(tools.any { it.name == "scan_status" })
+            assertTrue(tools.any { it.name == "scan_delete" })
         }
     }
 }
