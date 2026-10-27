@@ -3,9 +3,6 @@ package net.portswigger.mcp.security
 import burp.api.montoya.MontoyaApi
 import net.portswigger.mcp.config.Dialogs
 import net.portswigger.mcp.config.McpConfig
-import javax.swing.SwingUtilities
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 interface UserApprovalHandler {
     suspend fun requestApproval(
@@ -17,45 +14,37 @@ class SwingUserApprovalHandler : UserApprovalHandler {
     override suspend fun requestApproval(
         hostname: String, port: Int, config: McpConfig, requestContent: String?, api: MontoyaApi?
     ): Boolean {
-        return suspendCoroutine { continuation ->
-            SwingUtilities.invokeLater {
-                val message = buildString {
-                    appendLine("An MCP client is requesting to send an HTTP request to:")
-                    appendLine()
-                    appendLine("Target: $hostname:$port")
-                    appendLine()
-                }
+        val message = buildString {
+            appendLine("An MCP client is requesting to send an HTTP request to:")
+            appendLine()
+            appendLine("Target: $hostname:$port")
+            appendLine()
+        }
 
-                val options = arrayOf(
-                    "Allow Once", "Always Allow Host", "Always Allow Host:Port", "Deny"
-                )
+        val options = arrayOf(
+            "Allow Once", "Always Allow Host", "Always Allow Host:Port", "Deny"
+        )
 
-                val burpFrame = findBurpFrame()
+        val burpFrame = findBurpFrame()
 
-                val result = Dialogs.showOptionDialog(
-                    burpFrame, message, options, requestContent, api
-                )
+        val result = Dialogs.requestOption(
+            burpFrame, message, options, requestContent, api
+        )
 
-                when (result) {
-                    0 -> {
-                        continuation.resume(true)
-                    }
+        return when (result) {
+            0 -> true
 
-                    1 -> {
-                        config.addAutoApproveTarget(hostname)
-                        continuation.resume(true)
-                    }
-
-                    2 -> {
-                        config.addAutoApproveTarget("$hostname:$port")
-                        continuation.resume(true)
-                    }
-
-                    else -> {
-                        continuation.resume(false)
-                    }
-                }
+            1 -> {
+                config.addAutoApproveTarget(hostname)
+                true
             }
+
+            2 -> {
+                config.addAutoApproveTarget("$hostname:$port")
+                true
+            }
+
+            else -> false
         }
     }
 }

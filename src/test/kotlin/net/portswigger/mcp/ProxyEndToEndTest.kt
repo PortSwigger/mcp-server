@@ -5,9 +5,12 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import kotlin.coroutines.resume
+import net.portswigger.mcp.security.HttpRequestSecurity
+import net.portswigger.mcp.security.UserApprovalHandler
 import net.portswigger.mcp.config.McpConfig
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -60,6 +63,52 @@ class ProxyEndToEndTest {
 
     private fun findAvailablePort(): Int {
         return ServerSocket(0).use { it.localPort }
+    }
+
+    @Test
+    fun `client timeout cancels pending HTTP1 approval through proxy`() = runBlocking {
+        assertCancelledApproval("send_http1_request", mapOf("content" to "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"))
+    }
+
+    @Test
+    fun `client timeout cancels pending HTTP2 approval through proxy`() = runBlocking {
+        assertCancelledApproval("send_http2_request", mapOf(
+            "pseudoHeaders" to mapOf("method" to "GET", "path" to "/", "scheme" to "https", "authority" to "example.com"),
+            "headers" to emptyMap<String, String>(), "requestBody" to ""
+        ))
+    }
+
+    private suspend fun assertCancelledApproval(tool: String, request: Map<String, Any>) = coroutineScope {
+        config.requireHttpRequestApproval = true
+        val originalHandler = HttpRequestSecurity.approvalHandler
+        val pending = CompletableDeferred<CancellableContinuation<Boolean>>()
+        val cancelled = CompletableDeferred<Unit>()
+        HttpRequestSecurity.approvalHandler = object : UserApprovalHandler {
+            override suspend fun requestApproval(
+                hostname: String, port: Int, config: McpConfig, requestContent: String?, api: MontoyaApi?
+            ): Boolean = suspendCancellableCoroutine { continuation ->
+                continuation.invokeOnCancellation { cancelled.complete(Unit) }
+                pending.complete(continuation)
+            }
+        }
+        try {
+            val call = launch {
+                withTimeout(1500) {
+                    client.callTool(tool, request + mapOf("targetHostname" to "example.com", "targetPort" to 443, "usesHttps" to true))
+                }
+            }
+            val approval = withTimeout(5000) { pending.await() }
+            withTimeout(5000) { call.join() }
+            assertTrue(call.isCancelled)
+            withTimeout(5000) { cancelled.await() }
+            approval.resume(true) // A late Allow must not send the HTTP request.
+            client.ping()
+            val http = api.http()
+            verify(exactly = 0) { http.sendRequest(any()) }
+            verify(exactly = 0) { http.sendRequest(any(), any<burp.api.montoya.http.HttpMode>()) }
+        } finally {
+            HttpRequestSecurity.approvalHandler = originalHandler
+        }
     }
 
     @BeforeEach

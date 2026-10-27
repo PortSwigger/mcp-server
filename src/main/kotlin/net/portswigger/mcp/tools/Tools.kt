@@ -10,7 +10,8 @@ import burp.api.montoya.http.HttpService
 import burp.api.montoya.http.message.HttpHeader
 import burp.api.montoya.http.message.requests.HttpRequest
 import io.modelcontextprotocol.kotlin.sdk.server.Server
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
@@ -111,9 +112,7 @@ private fun normalizePrelude(prelude: String): String = prelude
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
-        val allowed = runBlocking {
-            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
-        }
+        val allowed = HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, content, api)
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
             return@mcpTool "Send HTTP request denied by Burp Suite"
@@ -124,6 +123,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         val fixedContent = normalizeHttpContent(content)
 
         val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
+        currentCoroutineContext().ensureActive()
         val response = api.http().sendRequest(request)
 
         response?.toString() ?: "<no response>"
@@ -144,9 +144,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             }
         }
 
-        val allowed = runBlocking {
-            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, http2RequestDisplay, api)
-        }
+        val allowed = HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, http2RequestDisplay, api)
         if (!allowed) {
             api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
             return@mcpTool "Send HTTP request denied by Burp Suite"
@@ -157,6 +155,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         val headerList = buildHttp2HeaderList(pseudoHeaders, headers)
 
         val request = HttpRequest.http2Request(toMontoyaService(), headerList, requestBody)
+        currentCoroutineContext().ensureActive()
         val response = api.http().sendRequest(request, HttpMode.HTTP_2)
 
         response?.toString() ?: "<no response>"
@@ -298,9 +297,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpPaginatedTool<GetProxyHttpHistory>("Displays items within the proxy HTTP history") {
-        val allowed = runBlocking {
-            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
-        }
+        val allowed = checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
         if (!allowed) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
@@ -309,9 +306,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
-        val allowed = runBlocking {
-            checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
-        }
+        val allowed = checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
         if (!allowed) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
@@ -322,9 +317,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
-        val allowed = runBlocking {
-            checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
-        }
+        val allowed = checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
         if (!allowed) {
             return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
         }
@@ -333,9 +326,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpPaginatedTool<GetOrganizerItemsRegex>("Displays items matching a specified regex within the Organizer tab") {
-        val allowed = runBlocking {
-            checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
-        }
+        val allowed = checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
         if (!allowed) {
             return@mcpPaginatedTool sequenceOf("Organizer access denied by Burp Suite")
         }
@@ -346,9 +337,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
-        val allowed = runBlocking {
-            checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
-        }
+        val allowed = checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
         if (!allowed) {
             return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
         }
@@ -358,9 +347,7 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistoryRegex>("Displays items matching a specified regex within the proxy WebSocket history") {
-        val allowed = runBlocking {
-            checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
-        }
+        val allowed = checkDataAccessOrDeny(DataAccessType.WEBSOCKET_HISTORY, config, api, "WebSocket history")
         if (!allowed) {
             return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
         }

@@ -3,6 +3,9 @@ package net.portswigger.mcp.config
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.http.message.requests.HttpRequest
 import burp.api.montoya.ui.editor.EditorOptions
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import java.awt.*
 import java.awt.event.ActionEvent
 import java.awt.event.KeyEvent
@@ -282,12 +285,36 @@ object Dialogs {
         return result
     }
 
-    fun showOptionDialog(
+    suspend fun requestOption(
         parent: Component?,
         message: String,
         options: Array<String>,
         requestContent: String? = null,
         api: MontoyaApi? = null
+    ): Int = suspendCancellableCoroutine { continuation ->
+        SwingUtilities.invokeLater {
+            if (!continuation.isActive) return@invokeLater
+            try {
+                val result = showOptionDialog(parent, message, options, requestContent, api) { dialog ->
+                    continuation.invokeOnCancellation {
+                        SwingUtilities.invokeLater { dialog.dispose() }
+                    }
+                    continuation.isActive
+                }
+                continuation.resume(result)
+            } catch (error: Exception) {
+                continuation.resumeWithException(error)
+            }
+        }
+    }
+
+    fun showOptionDialog(
+        parent: Component?,
+        message: String,
+        options: Array<String>,
+        requestContent: String? = null,
+        api: MontoyaApi? = null,
+        onShow: (JDialog) -> Boolean = { true }
     ): Int {
         val dialog = createDialog(parent)
         var result = -1
@@ -467,7 +494,8 @@ object Dialogs {
             )
         }
 
-        dialog.isVisible = true
+        if (onShow(dialog)) dialog.isVisible = true
+        else dialog.dispose()
 
         SwingUtilities.invokeLater {
             dialog.isAlwaysOnTop = false

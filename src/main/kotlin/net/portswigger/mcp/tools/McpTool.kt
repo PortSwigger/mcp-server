@@ -7,6 +7,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.ContentBlock
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -17,7 +18,7 @@ import kotlin.experimental.ExperimentalTypeInference
 @OptIn(InternalSerializationApi::class)
 inline fun <reified I : Any> Server.mcpTool(
     description: String,
-    crossinline execute: I.() -> List<ContentBlock>
+    crossinline execute: suspend I.() -> List<ContentBlock>
 ) {
     val toolName = I::class.simpleName?.toLowerSnakeCase() ?: error("Couldn't find name for ${I::class}")
     val serializer = I::class.serializer()
@@ -34,6 +35,8 @@ inline fun <reified I : Any> Server.mcpTool(
                 ),
                 isError = false
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             CallToolResult(
                 content = listOf(TextContent("Error: ${e.message}")),
@@ -50,7 +53,7 @@ inline fun <reified I : Any> Server.mcpTool(
 @JvmName("mcpToolString")
 inline fun <reified I : Any> Server.mcpTool(
     description: String,
-    crossinline execute: I.() -> String
+    crossinline execute: suspend I.() -> String
 ) {
     mcpTool<I>(description, execute = {
         listOf(TextContent(execute(this)))
@@ -59,7 +62,7 @@ inline fun <reified I : Any> Server.mcpTool(
 
 inline fun <reified I : Any> Server.mcpUnitTool(
     description: String,
-    crossinline execute: I.() -> Unit
+    crossinline execute: suspend I.() -> Unit
 ) {
     mcpTool<I>(description, execute = {
         execute(this)
@@ -71,7 +74,7 @@ inline fun <reified I : Any> Server.mcpUnitTool(
 inline fun <reified I : Paginated, J : Any> Server.mcpPaginatedTool(
     description: String,
     noinline mapper: (J) -> CharSequence = { it.toString() },
-    crossinline execute: I.() -> List<J>
+    crossinline execute: suspend I.() -> List<J>
 ) {
     mcpTool<I>(description, execute = {
 
@@ -94,7 +97,7 @@ inline fun <reified I : Paginated, J : Any> Server.mcpPaginatedTool(
 
 inline fun <reified I : Paginated> Server.mcpPaginatedTool(
     description: String,
-    crossinline execute: I.() -> Sequence<String>
+    crossinline execute: suspend I.() -> Sequence<String>
 ) {
     mcpTool<I>(description, execute = {
         val seq = execute(this)
@@ -114,7 +117,7 @@ inline fun <reified I : Paginated> Server.mcpPaginatedTool(
 inline fun Server.mcpTool(
     name: String,
     description: String,
-    crossinline execute: () -> List<ContentBlock>
+    crossinline execute: suspend () -> List<ContentBlock>
 ) {
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
         CallToolResult(content = execute(), isError = false)
@@ -125,7 +128,7 @@ inline fun Server.mcpTool(
 inline fun Server.mcpTool(
     name: String,
     description: String,
-    crossinline execute: () -> String
+    crossinline execute: suspend () -> String
 ) {
     val handler: suspend (ClientConnection, CallToolRequest) -> CallToolResult = { _, _ ->
         CallToolResult(content = listOf(TextContent(execute())), isError = false)
