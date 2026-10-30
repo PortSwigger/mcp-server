@@ -9,6 +9,7 @@ For more information about the protocol visit: [modelcontextprotocol.io](https:/
 ## Features
 
 - Connect Burp Suite to AI clients through MCP
+- Native Streamable HTTP at `/mcp`, alongside legacy SSE
 - Automatic installation for Claude Desktop
 - Comes with packaged Stdio MCP proxy server
 
@@ -16,7 +17,7 @@ For more information about the protocol visit: [modelcontextprotocol.io](https:/
 
 - Install the extension in Burp Suite
 - Configure your Burp MCP server in the extension settings
-- Configure your MCP client to use the Burp SSE MCP server or stdio proxy
+- Configure your MCP client to use native Streamable HTTP, legacy SSE, or the stdio proxy
 - Interact with Burp through your client!
 
 ## Installation
@@ -25,8 +26,11 @@ For more information about the protocol visit: [modelcontextprotocol.io](https:/
 
 Ensure that the following prerequisites are met before building and installing the extension:
 
-1. **Java**: Java must be installed and available in your system's PATH. You can verify this by running `java --version` in your terminal.
+1. **JDK 21**: JDK 21 must be installed and available in your system's PATH. You can verify this by running `java --version` in your terminal.
 2. **jar Command**: The `jar` command must be executable and available in your system's PATH. You can verify this by running `jar --version` in your terminal. This is required for building and installing the extension.
+
+The extension targets Java 21 bytecode, so Burp's Java runtime must support Java 21. If several JDKs are installed, set
+`JAVA_HOME` and ensure `java` and `jar` on `PATH` come from the intended JDK; packaging invokes `jar` directly.
 
 ### Building the Extension
 
@@ -67,18 +71,14 @@ Configuration for the extension is done through the Burp Suite UI in the `MCP` t
 - **Enable config editing**: The `Enable tools that can edit your config` checkbox allows the MCP server to expose tools which can edit Burp configuration files.
 - **Advanced options**: You can configure the port and host for the MCP server. By default, it listens on `http://127.0.0.1:9876`.
 
+The Streamable HTTP and SSE transports expose the same tools and use the same approval settings. Keep the listener local.
+
 ### Claude Desktop Client
 
-To fully utilize the MCP Server Extension with Claude, you need to configure your Claude client settings appropriately.
-The extension has an installer which will automatically configure the client settings for you.
+The extension's installer configures Claude Desktop to use the packaged stdio proxy, which connects to the SSE listener
+in the running Burp instance.
 
-1. Currently, Claude Desktop only support STDIO MCP Servers
-   for the service it needs.
-   This approach isn't ideal for desktop apps like Burp, so instead, Claude will start a proxy server that points to the
-   Burp instance,  
-   which hosts a web server at a known port (`localhost:9876`).
-
-2. **Configure Claude to use the Burp MCP server**  
+1. **Configure Claude Desktop to use the Burp MCP server**
    You can do this in one of two ways:
 
     - **Option 1: Run the installer from the extension**
@@ -103,11 +103,38 @@ The extension has an installer which will automatically configure the client set
       }
       ```
 
-3. **Restart Claude Desktop** - assuming Burp is running with the extension loaded.
+2. **Restart Claude Desktop** - assuming Burp is running with the extension loaded.
 
 ## Manual installations
-If you want to install the MCP server manually you can either use the extension's SSE server directly or the packaged
-Stdio proxy server.
+For manual installation, choose the extension's Streamable HTTP server, the SSE server, or the packaged
+Stdio proxy server according to your client's transport configuration.
+
+### Streamable HTTP MCP Server
+To use Streamable HTTP directly, provide the configured server URL with `/mcp` to your MCP client:
+```
+http://127.0.0.1:9876/mcp
+```
+
+Enable the MCP server in Burp before connecting your client. For example, configure Claude Code with:
+```sh
+claude mcp add --transport http burp http://127.0.0.1:9876/mcp
+```
+
+For Codex, use:
+```sh
+codex mcp add burp --url http://127.0.0.1:9876/mcp
+```
+
+These clients connect directly to Burp without starting the Stdio proxy. See the
+[Claude Code](https://code.claude.com/docs/en/mcp) and [Codex](https://developers.openai.com/codex/mcp/) documentation for
+client configuration options.
+
+This server's Streamable HTTP endpoint is stateless.
+
+Disconnecting an in-flight HTTP request cancels pending approvals, but Burp operations already in progress may finish.
+
+Cancellation notifications sent in a separate request are not supported;
+if your client leaves an approval open after cancelling, choose Deny or stop the MCP server.
 
 ### SSE MCP Server
 To use the SSE server directly, provide the configured server URL to your MCP client:
@@ -127,6 +154,9 @@ Once you have the jar you can add the following command and args to your client 
 /path/to/packaged/burp/java -jar /path/to/proxy/jar/mcp-proxy-all.jar --sse-url http://127.0.0.1:9876
 ```
 
+The proxy's `--sse-url` uses the base listener URL, without `/mcp`. The unchanged proxy emits a logging banner on stdout;
+strict JSON-only stdout compatibility depends on the client's handling of that banner.
+
 If you modify the proxy source, rebuild and copy it into this project before packaging the extension:
 ```bash
 # From mcp-proxy
@@ -145,4 +175,4 @@ data class with the required parameters which will come from the LLM.
 The tool name is auto-derived from its parameters data class. A description is also needed for the LLM. You can return
 a string or a `List<ContentBlock>` to provide data back to the LLM.
 
-Extend the Paginated interface to add auto-pagination support.
+Extend the Paginated interface to add auto-pagination support. Pass the registration's shared `ToolExecution` to wrappers so tools participate in the listener's capacity and cancellation ownership.

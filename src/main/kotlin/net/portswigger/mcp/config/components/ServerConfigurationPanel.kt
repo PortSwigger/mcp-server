@@ -132,11 +132,10 @@ class ServerConfigurationPanel(
     }
 
     fun updateDataAccessCheckboxes() {
-        SwingUtilities.invokeLater {
-            alwaysAllowHttpHistoryCheckBox.isSelected = config.alwaysAllowHttpHistory
-            alwaysAllowWebSocketHistoryCheckBox.isSelected = config.alwaysAllowWebSocketHistory
-            alwaysAllowOrganizerCheckBox.isSelected = config.alwaysAllowOrganizer
-        }
+        // Called from ConfigUi's owned Swing scope; do not enqueue an unowned refresh.
+        alwaysAllowHttpHistoryCheckBox.isSelected = config.alwaysAllowHttpHistory
+        alwaysAllowWebSocketHistoryCheckBox.isSelected = config.alwaysAllowWebSocketHistory
+        alwaysAllowOrganizerCheckBox.isSelected = config.alwaysAllowOrganizer
     }
 
     private fun createStandardCheckBox(

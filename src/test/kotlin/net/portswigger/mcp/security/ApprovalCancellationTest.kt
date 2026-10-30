@@ -62,11 +62,13 @@ class ApprovalCancellationTest {
         }
         try {
             withTimeout(5000) { shown.await() }
-            job.cancelAndJoin()
+            job.cancel()
         } finally {
+            // Cancellation completes on the EDT; release the mock dialog before joining.
             releaseDialog.countDown()
             SwingUtilities.invokeAndWait {}
         }
+        withTimeout(5000) { job.join() }
         assertTrue(job.isCancelled)
         assertEquals(false, sent)
         verify(exactly = 0) { config.addAutoApproveTarget(any()) }

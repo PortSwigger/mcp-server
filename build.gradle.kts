@@ -4,8 +4,8 @@ abstract class EmbedProxyJarTask : DefaultTask() {
     @get:InputFile
     abstract val shadowJarFile: RegularFileProperty
 
-    @get:InputDirectory
-    abstract val projectDir: DirectoryProperty
+    @get:InputFile
+    abstract val proxyJarFile: RegularFileProperty
 
     @get:Inject
     abstract val execOperations: ExecOperations
@@ -13,15 +13,15 @@ abstract class EmbedProxyJarTask : DefaultTask() {
     @TaskAction
     fun embedJar() {
         val shadowJar = shadowJarFile.get().asFile
-        val libsDir = projectDir.dir("libs").get().asFile
-        val proxyJarFile = File(libsDir, "mcp-proxy-all.jar")
+        val proxyJarFile = proxyJarFile.get().asFile
+        val libsDir = proxyJarFile.parentFile
 
         if (!proxyJarFile.exists()) {
             throw GradleException("Proxy JAR not found at: ${proxyJarFile.absolutePath}")
         }
 
         execOperations.exec {
-            workingDir(projectDir.get().asFile)
+            workingDir(libsDir)
             commandLine("jar", "uf", shadowJar.absolutePath, "-C", libsDir.absolutePath, proxyJarFile.name)
         }
 
@@ -133,7 +133,7 @@ tasks {
         description = "Embeds the MCP proxy JAR into the shadow JAR"
         dependsOn(shadowJar)
         shadowJarFile.set(shadowJar.flatMap { it.archiveFile })
-        projectDir.set(layout.projectDirectory)
+        proxyJarFile.set(layout.projectDirectory.file("libs/mcp-proxy-all.jar"))
     }
 
     build {

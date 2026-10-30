@@ -12,6 +12,7 @@ import javax.swing.JOptionPane.*
 
 class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
 
+    @Volatile private var disposed = false
     private var listenerHandle: ListenerHandle? = null
     private var refreshListener: (() -> Unit)? = null
 
@@ -61,7 +62,7 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
 
         refreshListener = {
             SwingUtilities.invokeLater {
-                updateTargetsList(listModel)
+                if (!disposed) updateTargetsList(listModel)
             }
         }
         listenerHandle = config.addTargetsChangeListener(refreshListener!!)
@@ -293,6 +294,7 @@ class AutoApproveTargetsPanel(private val config: McpConfig) : JPanel() {
     }
 
     fun cleanup() {
+        disposed = true
         listenerHandle?.remove()
         listenerHandle = null
         refreshListener = null

@@ -1,88 +1,59 @@
 package net.portswigger.mcp
 
-import io.ktor.client.*
-import io.ktor.client.plugins.*
-import io.ktor.client.plugins.sse.*
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.sse.SSE
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.EmptyResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.Tool
-import org.slf4j.LoggerFactory
+import kotlinx.coroutines.withTimeout
 
 class TestSseMcpClient {
-    private val logger = LoggerFactory.getLogger(TestSseMcpClient::class.java)
-    private val mcp: Client = Client(clientInfo = Implementation(name = "test-mcp-client", version = "1.0.0"))
+    private val mcp = Client(clientInfo = Implementation(name = "test-mcp-client", version = "1.0.0"))
     private var connected = false
-
-    private lateinit var tools: List<Tool>
+    private var httpClient: HttpClient? = null
 
     suspend fun connectToServer(sseUrl: String) {
-        try {
-            val httpClient = HttpClient {
-                install(SSE)
-                install(HttpTimeout) {
-                    requestTimeoutMillis = 30000
-                    connectTimeoutMillis = 15000
-                }
+        httpClient?.close()
+        val connectionClient = HttpClient {
+            install(SSE)
+            install(HttpTimeout) {
+                requestTimeoutMillis = 30_000
+                connectTimeoutMillis = 15_000
             }
-
-            val transport = SseClientTransport(httpClient, urlString = sseUrl)
-
-            mcp.connect(transport)
+        }
+        httpClient = connectionClient
+        try {
+            withTimeout(10_000) {
+                mcp.connect(SseClientTransport(connectionClient, urlString = sseUrl))
+            }
             connected = true
-
-            val toolsResult = mcp.listTools()
-            tools = toolsResult.tools
-            println("Connected to server with tools: ${tools.joinToString(", ") { it.name }}")
-        } catch (e: Exception) {
-            println("Failed to connect to MCP server: $e")
-            throw e
+        } catch (error: Throwable) {
+            connected = false
+            connectionClient.close()
+            throw error
         }
     }
 
     fun isConnected(): Boolean = connected
 
-    suspend fun ping(): EmptyResult {
-        try {
-            val pingRequest = mcp.ping()
-            logger.info("Ping sent: $pingRequest")
-            return pingRequest
-        } catch (e: Exception) {
-            logger.error("Failed to send ping: $e")
-            throw e
-        }
-    }
+    suspend fun ping(): EmptyResult = withTimeout(10_000) { mcp.ping() }
 
-    suspend fun listTools(): List<Tool> {
-        try {
-            val toolsResult = mcp.listTools()
-            tools = toolsResult.tools
-            logger.info("Tools listed: ${tools.joinToString(", ") { it.name }}")
-            return tools
-        } catch (e: Exception) {
-            logger.error("Failed to list tools: $e")
-            throw e
-        }
-    }
+    suspend fun listTools(): List<Tool> = withTimeout(10_000) { mcp.listTools().tools }
 
-    suspend fun callTool(toolName: String, arguments: Map<String, Any>): CallToolResult? {
-        try {
-            return mcp.callTool(toolName, arguments)
-        } catch (e: Exception) {
-            logger.error("Failed to call tool: $e")
-            throw e
-        }
-    }
+    suspend fun callTool(toolName: String, arguments: Map<String, Any>): CallToolResult? =
+        withTimeout(10_000) { mcp.callTool(toolName, arguments) }
 
     suspend fun close() {
         try {
-            mcp.close()
+            withTimeout(10_000) { mcp.close() }
+        } finally {
             connected = false
-            logger.info("MCP client closed successfully.")
-        } catch (e: Exception) {
-            logger.error("Failed to close MCP client: $e")
+            httpClient?.close()
+            httpClient = null
         }
     }
 }
