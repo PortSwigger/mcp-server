@@ -109,25 +109,40 @@ The extension has an installer which will automatically configure the client set
 ### Codex
 
 Codex connects to the extension's Streamable HTTP endpoint directly; no proxy jar or Java path is needed.
-With Burp running and the extension enabled:
+
+#### Plugin (recommended)
+
+The Burp Suite MCP Server plugin sets up the connection and adds a skill that teaches Codex how to use the tools:
+which to reach for, how Burp's approval prompts behave and what to do when a call hangs.
+
+```bash
+codex plugin marketplace add PortSwigger/mcp-server
+codex plugin add burp-suite-mcp-server@portswigger
+```
+
+The plugin expects the extension on `http://127.0.0.1:9876`. If you changed the host or port, or want Codex to run
+the tools without asking (needed for non-interactive `codex exec` runs), override the server in
+`~/.codex/config.toml`. Give the full entry, including `url`:
+
+```toml
+[mcp_servers.burp]
+url = "http://127.0.0.1:9876/mcp"
+default_tools_approval_mode = "approve"
+```
+
+#### Without the plugin
 
 ```bash
 codex mcp add burp --url http://127.0.0.1:9876/mcp
 ```
 
-Or add it to `~/.codex/config.toml` yourself:
+The skill lives in `plugins/burp-suite-mcp-server/skills/burp-mcp`; copy that folder into `~/.codex/skills/` to use
+it without the plugin.
 
-```toml
-[mcp_servers.burp]
-url = "http://127.0.0.1:9876/mcp"
-```
-
-If you changed the host or port in the extension settings, use those instead.
+#### Approvals
 
 By default the extension asks for approval in Burp before sending HTTP requests or reading proxy history, so keep an
-eye on Burp while Codex works, or use the auto-approve options in the `MCP` tab. Non-interactive runs (`codex exec`)
-also need Codex itself to allow the tool calls, for example with `default_tools_approval_mode = "approve"` under
-`[mcp_servers.burp]`.
+eye on Burp while Codex works, or use the auto-approve options in the `MCP` tab.
 
 ## Manual installations
 If you want to install the MCP server manually you can either use the extension's SSE server directly or the packaged
