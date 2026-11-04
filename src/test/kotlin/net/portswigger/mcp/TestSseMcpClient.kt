@@ -5,6 +5,8 @@ import io.ktor.client.plugins.*
 import io.ktor.client.plugins.sse.*
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport
+import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
+import io.modelcontextprotocol.kotlin.sdk.shared.Transport
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.EmptyResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
@@ -19,17 +21,23 @@ class TestSseMcpClient {
     private lateinit var tools: List<Tool>
 
     suspend fun connectToServer(sseUrl: String) {
+        connect(SseClientTransport(httpClient(), urlString = sseUrl))
+    }
+
+    suspend fun connectToStreamableHttpServer(url: String) {
+        connect(StreamableHttpClientTransport(httpClient(), url))
+    }
+
+    private fun httpClient() = HttpClient {
+        install(SSE)
+        install(HttpTimeout) {
+            requestTimeoutMillis = 30000
+            connectTimeoutMillis = 15000
+        }
+    }
+
+    private suspend fun connect(transport: Transport) {
         try {
-            val httpClient = HttpClient {
-                install(SSE)
-                install(HttpTimeout) {
-                    requestTimeoutMillis = 30000
-                    connectTimeoutMillis = 15000
-                }
-            }
-
-            val transport = SseClientTransport(httpClient, urlString = sseUrl)
-
             mcp.connect(transport)
             connected = true
 

@@ -10,6 +10,7 @@ For more information about the protocol visit: [modelcontextprotocol.io](https:/
 
 - Connect Burp Suite to AI clients through MCP
 - Automatic installation for Claude Desktop
+- Serves both Streamable HTTP (`/mcp`) and legacy SSE (`/`) transports
 - Comes with packaged Stdio MCP proxy server
 
 ## Usage
@@ -105,12 +106,41 @@ The extension has an installer which will automatically configure the client set
 
 3. **Restart Claude Desktop** - assuming Burp is running with the extension loaded.
 
+### Codex
+
+Codex connects to the extension's Streamable HTTP endpoint directly; no proxy jar or Java path is needed.
+With Burp running and the extension enabled:
+
+```bash
+codex mcp add burp --url http://127.0.0.1:9876/mcp
+```
+
+Or add it to `~/.codex/config.toml` yourself:
+
+```toml
+[mcp_servers.burp]
+url = "http://127.0.0.1:9876/mcp"
+```
+
+If you changed the host or port in the extension settings, use those instead.
+
+By default the extension asks for approval in Burp before sending HTTP requests or reading proxy history, so keep an
+eye on Burp while Codex works, or use the auto-approve options in the `MCP` tab. Non-interactive runs (`codex exec`)
+also need Codex itself to allow the tool calls, for example with `default_tools_approval_mode = "approve"` under
+`[mcp_servers.burp]`.
+
 ## Manual installations
 If you want to install the MCP server manually you can either use the extension's SSE server directly or the packaged
 Stdio proxy server.
 
+### Streamable HTTP MCP Server
+Clients that support the Streamable HTTP transport (e.g. Codex) can use the `/mcp` path on the configured server URL:
+```
+http://127.0.0.1:9876/mcp
+```
+
 ### SSE MCP Server
-To use the SSE server directly, provide the configured server URL to your MCP client:
+To use the legacy SSE server directly, provide the configured server URL to your MCP client:
 ```
 http://127.0.0.1:9876
 ```

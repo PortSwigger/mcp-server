@@ -5,6 +5,7 @@ import burp.api.montoya.logging.Logging
 import burp.api.montoya.persistence.PersistedObject
 import io.mockk.every
 import io.mockk.mockk
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import net.portswigger.mcp.config.McpConfig
@@ -88,6 +89,26 @@ class McpServerIntegrationTest {
             
             val pingResult = client.ping()
             assertNotNull(pingResult, "Ping should return a result")
+        } catch (e: Exception) {
+            fail("Connection failed: ${e.message}")
+        }
+    }
+
+    @Test
+    fun `server should accept streamable HTTP connections and list tools`() = runBlocking {
+        try {
+            client.connectToStreamableHttpServer("http://127.0.0.1:${testPort}$STREAMABLE_HTTP_PATH")
+            assertTrue(client.isConnected(), "Client should be connected to server")
+
+            val toolNames = client.listTools().map { it.name }
+            assertTrue(toolNames.contains("output_project_options"), "Server should have output_project_options tool")
+
+            val result = client.callTool("url_encode", mapOf("content" to "hello world"))
+            assertNotNull(result, "Tool call result should not be null")
+            assertFalse(result?.isError ?: false, "Tool call should not return an error")
+            assertTrue(result?.content?.first() is TextContent, "Result should contain TextContent")
+
+            assertNotNull(client.ping(), "Ping should return a result")
         } catch (e: Exception) {
             fail("Connection failed: ${e.message}")
         }
