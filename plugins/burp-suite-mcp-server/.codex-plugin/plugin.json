@@ -1,0 +1,31 @@
+{
+  "name": "burp-suite-mcp-server",
+  "version": "1.4.0",
+  "description": "Connect Codex to Burp Suite through the Burp MCP Server extension.",
+  "author": {
+    "name": "PortSwigger",
+    "url": "https://portswigger.net/"
+  },
+  "homepage": "https://github.com/PortSwigger/mcp-server",
+  "repository": "https://github.com/PortSwigger/mcp-server",
+  "license": "GPL-3.0",
+  "keywords": ["burp", "burp suite", "portswigger", "security", "pentesting", "http", "proxy"],
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Burp Suite MCP Server",
+    "shortDescription": "Drive Burp Suite from Codex: traffic, requests, Repeater and Collaborator",
+    "longDescription": "Connects Codex to a running Burp Suite through the MCP Server extension. Codex can search Proxy HTTP and WebSocket history, send HTTP/1.1 and HTTP/2 requests through Burp, create Repeater and Intruder tabs, generate and poll Burp Collaborator payloads, and read scanner issues. Burp asks you to approve outgoing requests and history access unless you choose to auto-approve them. Requires Burp Suite with the MCP Server extension installed from the BApp Store.",
+    "developerName": "PortSwigger",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://portswigger.net/burp",
+    "logo": "./assets/portswigger-logo.png",
+    "defaultPrompt": [
+      "Find requests in Burp's Proxy history that hit /api",
+      "Resend the last login request in Burp and show me the response",
+      "Put this request in a Burp Repeater tab"
+    ],
+    "brandColor": "#FF6633"
+  }
+}

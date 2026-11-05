@@ -1,0 +1,20 @@
+{
+  "name": "portswigger",
+  "interface": {
+    "displayName": "PortSwigger"
+  },
+  "plugins": [
+    {
+      "name": "burp-suite-mcp-server",
+      "source": {
+        "source": "local",
+        "path": "./plugins/burp-suite-mcp-server"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
