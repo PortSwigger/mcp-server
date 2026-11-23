@@ -803,6 +803,164 @@ class ToolsKtTest {
         }
 
         @Test
+        fun `get latest proxy history should return items in reverse order`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+
+            every { proxyHistory[0].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /oldest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = null
+            )
+            every { proxyHistory[1].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /middle HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = null
+            )
+            every { proxyHistory[2].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /newest HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = null
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_latest_proxy_http_history", mapOf(
+                        "count" to 2
+                    )
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("GET /newest"), "Should contain newest item")
+                assertTrue(text.contains("GET /middle"), "Should contain middle item")
+                assertFalse(text.contains("GET /oldest"), "Should not contain oldest item")
+                assertTrue(
+                    text.indexOf("GET /newest") < text.indexOf("GET /middle"),
+                    "Newest should appear before middle"
+                )
+            }
+        }
+
+        @Test
+        fun `get latest proxy history should return empty message when no items`() {
+            val proxy = mockk<Proxy>()
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns emptyList()
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_latest_proxy_http_history", mapOf(
+                        "count" to 5
+                    )
+                )
+
+                delay(100)
+                result.expectTextContent("No items in proxy HTTP history")
+            }
+        }
+
+        @Test
+        fun `get latest proxy history should handle count larger than history`() {
+            val proxy = mockk<Proxy>()
+            val proxyHistory = listOf(mockk<ProxyHttpRequestResponse>())
+
+            every { api.proxy() } returns proxy
+            every { proxy.history() } returns proxyHistory
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+
+            every { proxyHistory[0].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /only HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = null
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_latest_proxy_http_history", mapOf(
+                        "count" to 100
+                    )
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("GET /only"))
+            }
+        }
+
+        @Test
+        fun `get latest proxy history regex should filter and return newest first`() {
+            val proxy = mockk<Proxy>()
+            val matchingHistory = listOf(
+                mockk<ProxyHttpRequestResponse>(),
+                mockk<ProxyHttpRequestResponse>()
+            )
+
+            every { api.proxy() } returns proxy
+            every { proxy.history(any()) } returns matchingHistory
+
+            mockkStatic("net.portswigger.mcp.schema.SerializationKt")
+
+            every { matchingHistory[0].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /api/older HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = null
+            )
+            every { matchingHistory[1].toSerializableForm() } returns HttpRequestResponse(
+                request = "GET /api/newer HTTP/1.1",
+                response = "HTTP/1.1 200 OK",
+                notes = null
+            )
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_latest_proxy_http_history_regex", mapOf(
+                        "regex" to "/api/",
+                        "count" to 10
+                    )
+                )
+
+                delay(100)
+                val text = result.expectTextContent()
+                assertTrue(text.contains("GET /api/newer"))
+                assertTrue(text.contains("GET /api/older"))
+                assertTrue(
+                    text.indexOf("GET /api/newer") < text.indexOf("GET /api/older"),
+                    "Newer should appear before older"
+                )
+            }
+        }
+
+        @Test
+        fun `get latest proxy history regex should return empty message when no matches`() {
+            val proxy = mockk<Proxy>()
+            every { api.proxy() } returns proxy
+            every { proxy.history(any()) } returns emptyList()
+
+            runBlocking {
+                val result = client.callTool(
+                    "get_latest_proxy_http_history_regex", mapOf(
+                        "regex" to "nonexistent",
+                        "count" to 10
+                    )
+                )
+
+                delay(100)
+                result.expectTextContent("No matching items in proxy HTTP history")
+            }
+        }
+
+        @Test
         fun `get proxy history should return valid size limited JSON`() {
             val proxy = mockk<Proxy>()
             val historyItem = mockk<ProxyHttpRequestResponse>()

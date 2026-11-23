@@ -316,6 +316,39 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             .map { encodeHistoryItem(it.toSerializableForm()) }
     }
 
+    mcpTool<GetLatestProxyHttpHistory>("Returns the most recent items from the proxy HTTP history, ordered newest first. Use this to see what traffic just came through the proxy.") {
+        val allowed = checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
+        if (!allowed) {
+            return@mcpTool "HTTP history access denied by Burp Suite"
+        }
+
+        val history = api.proxy().history()
+        if (history.isEmpty()) {
+            return@mcpTool "No items in proxy HTTP history"
+        }
+
+        val start = (history.size - count).coerceAtLeast(0)
+        history.subList(start, history.size).asReversed()
+            .joinToString(separator = "\n\n") { encodeHistoryItem(it.toSerializableForm()) }
+    }
+
+    mcpTool<GetLatestProxyHttpHistoryRegex>("Returns the most recent items matching a specified regex from the proxy HTTP history, ordered newest first. Use this to see the latest traffic matching a pattern.") {
+        val allowed = checkDataAccessOrDeny(DataAccessType.HTTP_HISTORY, config, api, "HTTP history")
+        if (!allowed) {
+            return@mcpTool "HTTP history access denied by Burp Suite"
+        }
+
+        val compiledRegex = Pattern.compile(regex)
+        val history = api.proxy().history { it.contains(compiledRegex) }
+        if (history.isEmpty()) {
+            return@mcpTool "No matching items in proxy HTTP history"
+        }
+
+        val start = (history.size - count).coerceAtLeast(0)
+        history.subList(start, history.size).asReversed()
+            .joinToString(separator = "\n\n") { encodeHistoryItem(it.toSerializableForm()) }
+    }
+
     mcpPaginatedTool<GetOrganizerItems>("Displays items within the Organizer tab") {
         val allowed = checkDataAccessOrDeny(DataAccessType.ORGANIZER, config, api, "Organizer")
         if (!allowed) {
@@ -498,6 +531,12 @@ data class GetProxyHttpHistory(override val count: Int, override val offset: Int
 
 @Serializable
 data class GetProxyHttpHistoryRegex(val regex: String, override val count: Int, override val offset: Int) : Paginated
+
+@Serializable
+data class GetLatestProxyHttpHistory(val count: Int = 10)
+
+@Serializable
+data class GetLatestProxyHttpHistoryRegex(val regex: String, val count: Int = 10)
 
 @Serializable
 data class GetOrganizerItems(override val count: Int, override val offset: Int) : Paginated
